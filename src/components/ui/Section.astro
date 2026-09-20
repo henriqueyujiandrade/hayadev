@@ -1,0 +1,44 @@
+---
+import ArrowLink from './ArrowLink.astro';
+import Container from './Container.astro';
+import Eyebrow from './Eyebrow.astro';
+
+interface Props {
+  title: string;
+  eyebrow?: string;
+  lead?: string;
+  /** Optional "see everything" link shown next to the heading. */
+  link?: { href: string; label: string };
+  /** Used for `aria-labelledby`, so each section is a named landmark. */
+  id: string;
+  width?: 'wide' | 'content';
+  class?: string;
+}
+
+const { title, eyebrow, lead, link, id, width = 'wide', class: className = '' } = Astro.props;
+const headingId = `${id}-heading`;
+---
+
+<section aria-labelledby={headingId} class:list={['py-section', className]}>
+  <Container width={width}>
+    <div class="flex flex-col gap-4 border-b border-border pb-6 sm:flex-row sm:items-end sm:justify-between sm:gap-8">
+      <div class="flex max-w-measure flex-col gap-2.5">
+        {eyebrow && <Eyebrow>{eyebrow}</Eyebrow>}
+        <h2 id={headingId} class="font-serif text-h2 text-ink">
+          {title}
+        </h2>
+        {lead && <p class="text-ink-muted">{lead}</p>}
+      </div>
+
+      {link && (
+        <ArrowLink href={link.href} class="shrink-0">
+          {link.label}
+        </ArrowLink>
+      )}
+    </div>
+
+    <div class="mt-10">
+      <slot />
+    </div>
+  </Container>
+</section>

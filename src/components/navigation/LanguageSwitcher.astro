@@ -1,0 +1,69 @@
+---
+import { LOCALES, LOCALE_LABEL, LOCALE_SHORT_LABEL, type Locale } from '@config/locales';
+import { useTranslations } from '@i18n/index';
+import { homePath } from '@utils/routes';
+
+interface Props {
+  locale: Locale;
+  /**
+   * Equivalent path in each locale for the *current* page. Locales missing from
+   * this map have no translation and are rendered inert rather than linked, so
+   * the switcher can never produce a 404.
+   */
+  alternatePaths?: Partial<Record<Locale, string>>;
+  class?: string;
+}
+
+const { locale: current, alternatePaths, class: className = '' } = Astro.props;
+const t = useTranslations(current);
+
+const options = LOCALES.map((locale) => ({
+  locale,
+  label: LOCALE_SHORT_LABEL[locale],
+  fullLabel: LOCALE_LABEL[locale],
+  isCurrent: locale === current,
+  /** Falls back to the localized home page only when no map was provided. */
+  href: alternatePaths ? alternatePaths[locale] : homePath(locale),
+}));
+---
+
+<nav aria-label={t.language.switcherLabel} class={className}>
+  <ul class="flex items-center gap-0.5 rounded-md border border-border-control bg-surface-muted p-0.5">
+    {options.map((option) =>
+      option.isCurrent ? (
+        <li>
+          <span
+            aria-current="true"
+            lang={option.locale}
+            class="block rounded-[0.1875rem] bg-surface px-2 py-1 font-mono text-[0.6875rem] font-medium text-ink shadow-subtle"
+          >
+            <span class="sr-only">{option.fullLabel}</span>
+            <span aria-hidden="true">{option.label}</span>
+          </span>
+        </li>
+      ) : option.href ? (
+        <li>
+          <a
+            href={option.href}
+            lang={option.locale}
+            hreflang={option.locale}
+            class="block rounded-[0.1875rem] px-2 py-1 font-mono text-[0.6875rem] text-ink-muted transition-colors hover:bg-surface hover:text-ink"
+          >
+            <span class="sr-only">{option.fullLabel}</span>
+            <span aria-hidden="true">{option.label}</span>
+          </a>
+        </li>
+      ) : (
+        <li>
+          <span
+            title={`${option.fullLabel} — ${t.language.unavailable}`}
+            class="block cursor-not-allowed rounded-[0.1875rem] px-2 py-1 font-mono text-[0.6875rem] text-ink-subtle opacity-50"
+          >
+            <span class="sr-only">{`${option.fullLabel}: ${t.language.unavailable}`}</span>
+            <span aria-hidden="true">{option.label}</span>
+          </span>
+        </li>
+      ),
+    )}
+  </ul>
+</nav>

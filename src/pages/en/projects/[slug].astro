@@ -1,0 +1,11 @@
+---
+import type { GetStaticPaths } from 'astro';
+import ProjectRoute from '@routes/ProjectRoute.astro';
+import { projectPaths } from '@routes/paths';
+
+export const getStaticPaths = (() => projectPaths('en')) satisfies GetStaticPaths;
+
+const { project } = Astro.props;
+---
+
+<ProjectRoute project={project} locale="en" />

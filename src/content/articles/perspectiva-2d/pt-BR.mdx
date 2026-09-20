@@ -1,0 +1,118 @@
+---
+title: Posicionamento em perspectiva num jogo 2D
+description: Como derivar escala, profundidade e ordem de desenho de uma única coordenada, transformando composição de cena em dados em vez de ajuste manual de pixels.
+pubDate: 2026-09-10
+draft: true
+featured: true
+category: games
+tags:
+  - TypeScript
+  - Canvas
+  - Games
+relatedProjects:
+  - hidden-object
+---
+
+Num jogo 2D com cenário ilustrado, o momento em que tudo começa a parecer errado
+é quando o mesmo objeto é colocado em dois pontos diferentes da cena. Encostado
+na borda inferior ele funciona. Movido para o fundo, continua do mesmo tamanho —
+e imediatamente deixa de pertencer à ilustração.
+
+A correção intuitiva é redimensionar cada objeto na mão. Isso funciona para dez
+objetos e se torna insustentável para cem.
+
+## A escala é derivada, não declarada
+
+A observação que resolve o problema é que, numa cena com ponto de fuga, a escala
+de um objeto não é uma propriedade dele. É uma **função da sua posição**.
+
+```ts
+interface PerspectiveConfig {
+  horizon: number;
+  nearScale: number;
+  farScale: number;
+}
+
+function scaleAt(y: number, config: PerspectiveConfig): number {
+  const { horizon, nearScale, farScale } = config;
+  const depth = (y - horizon) / (1 - horizon);
+  return farScale + (nearScale - farScale) * clamp(depth, 0, 1);
+}
+```
+
+O modelo de dados passa então a descrever apenas onde o objeto toca o chão:
+
+```ts
+interface PlacedObject {
+  id: string;
+  sprite: string;
+  anchor: { x: number; y: number };
+}
+```
+
+Nenhum campo `width`, nenhum campo `scale`. Um objeto colocado em `y: 0.82` é
+grande porque está perto; um objeto em `y: 0.31` é pequeno porque está longe.
+
+## O ponto de ancoragem importa
+
+A escolha do ponto de referência do sprite não é um detalhe. Ancorar pelo centro
+produz um erro sutil e persistente: ao mudar de escala, o objeto parece deslizar
+verticalmente, porque o centro se desloca enquanto a base deveria permanecer fixa.
+
+Ancorando pela base, o ponto de contato com o chão é invariante sob escala. O
+objeto cresce para cima, que é exatamente o que a perspectiva exige.
+
+| Ancoragem | Efeito ao escalar                |
+| --------- | -------------------------------- |
+| Centro    | O objeto desliza verticalmente   |
+| Base      | O objeto cresce a partir do chão |
+
+## Uma coordenada, três comportamentos
+
+O ganho real aparece quando se percebe que a mesma variável resolve outros dois
+problemas.
+
+**Ordem de desenho.** Objetos mais próximos devem cobrir os mais distantes:
+
+```ts
+const drawOrder = [...objects].sort((a, b) => a.anchor.y - b.anchor.y);
+```
+
+**Detecção de clique.** O teste percorre a cena na ordem inversa, de frente para
+trás, de modo que o objeto visualmente no topo é o primeiro a responder:
+
+```ts
+for (const object of [...objects].sort((a, b) => b.anchor.y - a.anchor.y)) {
+  if (containsPoint(boundsOf(object, scene), point)) return object;
+}
+```
+
+Escala, oclusão e prioridade de clique derivam todas de `anchor.y`. Não há três
+sistemas a manter sincronizados — há um só.
+
+## Independência de resolução
+
+Guardar as posições normalizadas, entre 0 e 1, e converter para pixels apenas no
+desenho tem uma consequência que compensa sozinha a decisão: a cena deixa de
+depender do tamanho da tela.
+
+```ts
+function toCanvas(anchor: Point, scene: Rect): Point {
+  return {
+    x: scene.x + anchor.x * scene.width,
+    y: scene.y + anchor.y * scene.height,
+  };
+}
+```
+
+Redimensionar a janela recalcula a projeção. Os dados do nível não mudam.
+
+## O padrão por trás disso
+
+Vale isolar o princípio, porque ele não é específico de jogos: **quando um valor
+pode ser derivado, não o armazene**. Um campo `scale` redundante é uma
+oportunidade permanente de inconsistência — alguém vai atualizar a posição e
+esquecer a escala.
+
+A composição de cena deixou de ser um trabalho de ajuste visual e passou a ser
+um arquivo de dados que descreve onde cada objeto está no mundo.

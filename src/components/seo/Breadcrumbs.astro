@@ -1,0 +1,42 @@
+---
+import { ChevronRight } from '@lucide/astro';
+import type { Locale } from '@config/locales';
+import { useTranslations } from '@i18n/index';
+import type { BreadcrumbItem } from '@utils/structured-data';
+
+interface Props {
+  locale: Locale;
+  /** Ordered trail. The last item is the current page and is not a link. */
+  items: readonly BreadcrumbItem[];
+  class?: string;
+}
+
+const { locale, items, class: className = '' } = Astro.props;
+const t = useTranslations(locale);
+---
+
+{/*
+  The visible trail. Its machine-readable twin (`BreadcrumbList`) is emitted by
+  the page's JSON-LD from the same `items` array, so the two cannot disagree.
+*/}
+<nav aria-label={t.breadcrumbs.label} class={className}>
+  <ol class="flex flex-wrap items-center gap-1 text-[0.8125rem] text-ink-muted">
+    {items.map((item, index) => {
+      const isLast = index === items.length - 1;
+      return (
+        <li class="flex items-center gap-1">
+          {index > 0 && <ChevronRight class="size-3.5 text-ink-subtle" aria-hidden="true" />}
+          {isLast ? (
+            <span aria-current="page" class="text-ink">
+              {item.name}
+            </span>
+          ) : (
+            <a href={item.path} class="rounded-sm transition-colors hover:text-ink">
+              {item.name}
+            </a>
+          )}
+        </li>
+      );
+    })}
+  </ol>
+</nav>

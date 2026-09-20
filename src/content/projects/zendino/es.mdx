@@ -1,0 +1,130 @@
+---
+title: Zendino
+description: Juego de biofeedback respiratorio para niños, en React y Canvas, en el que un árbol guía la respiración y un dinosaurio reacciona a la frecuencia cardíaca. Desarrollado en Self.
+shortDescription: Juego de biofeedback respiratorio para niños, con sensor de frecuencia cardíaca.
+projectType: game
+status: completed
+role: Desarrollo del juego
+technologies:
+  - TypeScript
+  - React
+  - Canvas
+  - Vite
+  - Web Bluetooth
+  - Styled Components
+year: 2026
+featured: true
+confidential: true
+caseStudy: true
+order: 20
+---
+
+**Zendino** es un juego de biofeedback respiratorio para niños. El jugador respira
+al ritmo que propone la animación, y un sensor de frecuencia cardíaca, opcional,
+mide la variabilidad de los latidos: un dinosaurio reacciona a la calidad de la
+respiración, de triste a satisfecho. Fue desarrollado en Self y corre en el
+navegador, embebido en el portal de la plataforma.
+
+Lo que sigue son las decisiones técnicas detrás de él.
+
+## Una guía que forma parte del escenario
+
+El juego tiene dos modos, y en ambos la guía de la respiración es el propio
+escenario. En el **modo principal**, un árbol crece mientras el niño inspira, se
+encoge mientras espira y queda quieto en las pausas. En el **modo alternativo**, el
+dinosaurio respira en ciclo, los árboles se mecen y un flujo de aire sale de su nariz
+o de su boca.
+
+Por debajo, el árbol es una pequeña máquina de estados — creciendo, pausa llena,
+encogiendo, pausa vacía —, y su escala sigue una curva suavizada, y no lineal, para
+que el movimiento no parezca mecánico. El indicador de respiración del HUD no se
+calcula en paralelo: lee el estado de la propia guía, así que los dos no pueden
+divergir.
+
+## Una recompensa que no castiga
+
+La emoción del dinosaurio es el canal de recompensa. La lógica que la decide está
+hecha de funciones puras, sin nada de dibujo adentro. Con sensor, parte del nivel de
+respiración medido, y una **política de dificultad** decide cuánto puede retroceder
+la emoción:
+
+```ts
+type Policy = 'easy' | 'medium' | 'hard';
+type Reading = { measured: number; current: number; wellBelowBaseline: boolean };
+
+// Dada la lectura, cuándo puede cambiar la emoción del dinosaurio.
+function nextLevel(policy: Policy, r: Reading) {
+  if (policy === 'hard') return r.measured; // sigue la medida
+  if (policy === 'easy') return Math.max(r.measured, r.current); // solo avanza
+  if (r.measured >= r.current) return r.measured; // medio: avanza libremente
+  return r.wellBelowBaseline ? r.measured : r.current; // retrocede con margen
+}
+```
+
+En el modo fácil, una mala respiración nunca empeora al dinosaurio. En el medio,
+avanza libremente y solo retrocede cuando la medida cae bien por debajo de la
+referencia de la calibración, lo que evita que oscile con cada caída momentánea. En
+el difícil, acompaña la medida.
+
+**Sin sensor, el juego no se queda sin recompensa.** Un cronograma hace avanzar la
+emoción con el progreso de la sesión. Está indexado por la posición **absoluta** en
+la sesión, y no por el tiempo restante, así que pasar al modo automático a mitad de
+la partida no empieza de cero. Y hay un **piso**: si el sensor falla con el
+dinosaurio ya feliz, el cronograma diría «triste», y el niño sería castigado por una
+falla de hardware. El piso conserva lo que ya conquistó. La misma lógica vale cuando
+la señal se pierde por demasiado tiempo o la conexión se cae: la sesión continúa, en
+modo automático.
+
+## Transiciones sin saltos
+
+En un juego pensado para calmar, un cambio brusco de imagen llama la atención sobre
+sí mismo. Por eso casi nada cambia de inmediato:
+
+- una nueva emoción queda **pendiente** hasta que la animación actual llega al
+  cuadro cero, y se descarta si la medida vuelve al valor anterior antes de eso;
+- al final de la sesión, el dinosaurio completa el ciclo en curso y se detiene en el
+  cuadro cero, y el árbol se asienta en el punto medio del zoom, detectado por el
+  cruce en ambos sentidos, antes de empezar la animación final;
+- una pausa congela la escena en lugar de borrarla, y al reanudar se reinicia el
+  reloj del bucle, para que el tiempo detenido no se convierta en un salto.
+
+## Canvas en resolución fija
+
+Todo el dibujo ocurre en un canvas de resolución lógica fija, escalado a la ventana
+mediante una transformación, con la proporción mantenida y el conjunto centrado. Así,
+posiciones, tamaños y desplazamientos viven en un único sistema de coordenadas, y el
+juego no recalcula el diseño para cada tamaño de pantalla.
+
+El bucle de dibujo vive fuera del ciclo de vida de React y lee el estado mediante
+refs, y el indicador de respiración sigue el mismo camino: el bucle escribe el estado
+de la guía en una ref compartida, y el indicador, con su propio bucle, cambia el
+estilo del elemento directamente en el DOM. El relleno, actualizado en cada cuadro,
+no pasa por el estado de React, así que no cuesta ninguna re-renderización. Cada
+estado del juego — pre-juego, jugando, pausado, fin — tiene su propia rama de dibujo.
+Las capas del fondo que usan filtro se prerrenderizan en un `OffscreenCanvas` y solo
+se rehacen cuando cambia el tamaño, y el flujo de aire del modo alternativo es un
+conjunto fijo de partículas con fase con signo: el signo dice si convergen hacia el
+origen, al inspirar, o se alejan de él, al espirar.
+
+## Un tutorial hecho con el propio juego
+
+El tutorial no es una animación aparte. Monta el mismo dinosaurio, los mismos
+árboles, el mismo fondo y las mismas partículas del juego, dirigidos por pasos. Como
+es el mismo código de dibujo, lo que el tutorial muestra es lo que el juego hace.
+
+## Biofeedback y plataforma
+
+La capa de biofeedback viene del template de la línea de juegos terapéuticos de Self
+y se reutilizó. La variabilidad de la frecuencia cardíaca (RMSSD) se calcula en el
+navegador a partir de los intervalos entre los latidos del sensor, vía Web Bluetooth,
+se compara con una referencia de la calibración y se reduce a un nivel, el mismo que
+alimenta la emoción del dinosaurio. El sensor es opcional. El juego corre embebido en
+el portal de la plataforma, que crea la sesión y recibe el resultado de la partida.
+Es la capa de juego la que este texto describe.
+
+## Qué demuestra este proyecto
+
+Desde el punto de vista de la ingeniería, el interés aquí no es el dinosaurio. Es que
+la experiencia de un niño — una recompensa que no castiga, transiciones sin saltos, un
+sensor que puede fallar — se tradujo en reglas pequeñas y aisladas del dibujo, sobre
+un bucle de renderizado simple y predecible.

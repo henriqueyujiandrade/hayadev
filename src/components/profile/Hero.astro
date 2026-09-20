@@ -1,0 +1,72 @@
+---
+import SocialLinks from '@components/navigation/SocialLinks.astro';
+import ButtonLink from '@components/ui/ButtonLink.astro';
+import Container from '@components/ui/Container.astro';
+import type { Locale } from '@config/locales';
+import { jobTitle, person } from '@config/person';
+import { primaryTechnologies } from '@config/stack';
+import { useTranslations } from '@i18n/index';
+import { highlightInitials } from '@utils/name';
+import { localizedPath } from '@utils/routes';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const t = useTranslations(locale);
+
+const location = `${person.location.city}, ${person.location.country}`;
+const nameSegments = highlightInitials(person.fullName || person.name);
+---
+
+{/*
+  The first screen answers, in order: who, what, with what, and where to go
+  next — the four things a recruiter checks in the first ten seconds, and the
+  four an engineer needs before deciding whether to keep reading.
+*/}
+<section class="border-b border-border">
+  <Container class="pt-16 pb-16 sm:pt-24 sm:pb-20">
+    <div class="flex max-w-measure flex-col gap-6">
+      <p class="font-mono text-micro tracking-[0.12em] text-ink-muted uppercase">{location}</p>
+
+      <div class="flex flex-col gap-3">
+        {/* The initials behind the HayaDev brand, in the accent colour. Plain inline spans:
+            the heading still reads and copies as one name. */}
+        <h1 class="font-serif text-display text-ink">
+          {nameSegments.map((segment) =>
+            segment.highlight ? <span class="text-accent">{segment.text}</span> : segment.text,
+          )}
+        </h1>
+        <p class="text-h3 font-medium text-accent">{jobTitle[locale]}</p>
+      </div>
+
+      <p class="text-lead text-ink-muted">{t.home.heroIntro}</p>
+
+      <ul class="mt-1 flex flex-wrap gap-x-1.5 gap-y-2">
+        {primaryTechnologies.map((technology) => (
+          <li class="rounded-sm border border-border bg-surface px-2.5 py-1 font-mono text-[0.75rem] text-ink-muted">
+            {technology}
+          </li>
+        ))}
+      </ul>
+
+      {/* The unusual part of the profile, kept apart so it never dilutes the sentence above. */}
+      <p class="text-ink-muted">{t.home.heroGames}</p>
+
+      <div class="mt-4 flex flex-wrap items-center gap-3">
+        <ButtonLink href={localizedPath('projects', locale)} variant="primary">
+          {t.home.ctaProjects}
+        </ButtonLink>
+        <ButtonLink href={localizedPath('articles', locale)}>{t.home.ctaArticles}</ButtonLink>
+        <ButtonLink href={localizedPath('about', locale)} variant="ghost">
+          {t.home.ctaAbout}
+        </ButtonLink>
+
+        <div class="-ms-1">
+          <SocialLinks locale={locale} />
+        </div>
+      </div>
+    </div>
+  </Container>
+</section>

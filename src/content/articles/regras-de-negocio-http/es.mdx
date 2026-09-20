@@ -1,0 +1,128 @@
+---
+title: Separar las reglas de negocio de la capa HTTP en una API Python
+description: Por qué la vista no es el lugar de las reglas de negocio, y cómo una capa de servicios explícita mantiene testeable una API Django a medida que crece el dominio.
+pubDate: 2026-08-22
+draft: true
+category: backend
+tags:
+  - Python
+  - Django
+  - APIs
+  - Arquitectura
+relatedArticles:
+  - idempotencia-endpoints
+---
+
+Una API Django empieza simple. La vista recibe la petición, valida el payload,
+escribe en la base de datos y devuelve una respuesta. Mientras la operación sea
+una escritura directa, esa es la forma correcta: introducir capas en esta etapa
+es coste sin retorno.
+
+El problema aparece cuando la misma operación empieza a tener consecuencias:
+crear un registro también debe reservar capacidad, notificar a otro sistema y
+respetar una condición que depende del estado actual. La vista crece, y con ella
+la dificultad de responder a una pregunta simple: _¿dónde está la regla?_
+
+## El síntoma
+
+La señal más fiable de que la separación ya debería haber ocurrido es el segundo
+punto de entrada. Un comando de gestión, una tarea en segundo plano o un webhook
+necesita ejecutar la misma operación, y la única implementación que existe está
+atrapada dentro de una vista.
+
+Lo que suele venir después es una copia de la lógica, y desde ahí las dos copias
+divergen en silencio.
+
+## La capa de servicio
+
+La corrección es modesta: una función que recibe datos ya validados y devuelve el
+resultado de la operación, sin saber nada de HTTP.
+
+```python
+from dataclasses import dataclass
+
+@dataclass(frozen=True)
+class ScheduleSession:
+    patient_id: int
+    professional_id: int
+    starts_at: datetime
+
+
+def schedule_session(command: ScheduleSession) -> Session:
+    """Agenda una sesión, asegurando que el horario sigue libre.
+
+    No conoce peticiones, respuestas ni códigos de estado: la misma función
+    sirve a una vista, a un comando de gestión y a un consumidor de cola.
+    """
+    with transaction.atomic():
+        if _has_conflict(command.professional_id, command.starts_at):
+            raise SlotUnavailable(command.starts_at)
+
+        session = Session.objects.create(
+            patient_id=command.patient_id,
+            professional_id=command.professional_id,
+            starts_at=command.starts_at,
+        )
+
+    notify_scheduled(session)
+    return session
+```
+
+A la vista le queda lo que es realmente su trabajo:
+
+```python
+class SessionCreateView(APIView):
+    def post(self, request):
+        serializer = SessionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            session = schedule_session(ScheduleSession(**serializer.validated_data))
+        except SlotUnavailable as error:
+            return Response({"detail": str(error)}, status=409)
+
+        return Response(SessionSerializer(session).data, status=201)
+```
+
+## La división que importa
+
+La frontera útil no es "vista fina, servicio gordo". Es una división por tipo de
+responsabilidad:
+
+| Capa       | Responsabilidad                                            |
+| ---------- | ---------------------------------------------------------- |
+| Serializer | Forma de los datos: tipos, obligatoriedad, formato         |
+| Vista      | Traducción entre HTTP y dominio: estado, permisos          |
+| Servicio   | Regla de negocio: qué puede ocurrir y bajo qué condiciones |
+| Modelo     | Persistencia e invariantes del propio registro             |
+
+Una pregunta separa con claridad serializer de servicio: _¿esta validación
+depende de otros registros?_ Un campo obligatorio es forma. "Este horario está
+libre" es regla: depende del estado del sistema y puede cambiar entre la
+validación y la escritura.
+
+## La ganancia concreta
+
+**Los tests dejan de necesitar HTTP.** La regla se prueba llamando a una función:
+
+```python
+def test_rejects_overlapping_session(professional, patient):
+    existing = SessionFactory(professional=professional, starts_at=NOON)
+
+    with pytest.raises(SlotUnavailable):
+        schedule_session(
+            ScheduleSession(patient.id, professional.id, existing.starts_at)
+        )
+```
+
+Sin cliente HTTP, sin ruta, sin autenticación. Cuando probar una regla es barato,
+la regla se prueba de verdad.
+
+## Cuándo no hacerlo
+
+La separación tiene coste: más archivos, más indirección. Para un CRUD que es
+genuinamente un CRUD, el servicio no aporta más que una llamada extra.
+
+El detonante no es el tamaño de la aplicación. Es la primera vez que una
+operación adquiere una regla que no cabe en un serializer, o la primera vez que
+necesita invocarse desde dos sitios.

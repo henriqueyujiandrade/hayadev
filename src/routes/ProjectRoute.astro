@@ -1,0 +1,244 @@
+---
+import { ExternalLink, Lock, Play } from '@lucide/astro';
+import { Image } from 'astro:assets';
+import { render } from 'astro:content';
+import RelatedArticles from '@components/articles/RelatedArticles.astro';
+import GithubIcon from '@components/icons/GithubIcon.astro';
+import Breadcrumbs from '@components/seo/Breadcrumbs.astro';
+import Badge from '@components/ui/Badge.astro';
+import ButtonLink from '@components/ui/ButtonLink.astro';
+import Container from '@components/ui/Container.astro';
+import DraftNotice from '@components/ui/DraftNotice.astro';
+import Tag from '@components/ui/Tag.astro';
+import type { Locale } from '@config/locales';
+import BaseLayout from '@layouts/BaseLayout.astro';
+import { useTranslations } from '@i18n/index';
+import { getProjectArticles, getProjectLocales, type LocalizedProject } from '@utils/content';
+import { homePath, localizedPath } from '@utils/routes';
+import { buildAlternates, defaultOgImage, formatTitle, pathsForLocales } from '@utils/seo';
+import {
+  breadcrumbSchema,
+  graph,
+  personSchema,
+  projectSchema,
+  type BreadcrumbItem,
+} from '@utils/structured-data';
+import { absoluteUrl } from '@utils/url';
+
+interface Props {
+  project: LocalizedProject;
+  locale: Locale;
+}
+
+const { project, locale } = Astro.props;
+const t = useTranslations(locale);
+const { data } = project;
+
+const { Content } = await render(project.entry);
+
+const [translatedLocales, relatedArticles] = await Promise.all([
+  getProjectLocales(project.translationKey),
+  getProjectArticles(project),
+]);
+
+const path = localizedPath('projects', locale, project.slug);
+const canonicalPath = absoluteUrl(path);
+
+const alternatePaths = pathsForLocales(translatedLocales, (target) =>
+  localizedPath('projects', target, project.slug),
+);
+const { alternates, xDefault } = buildAlternates(alternatePaths);
+
+const coverUrl = data.cover ? absoluteUrl(data.cover.src) : undefined;
+const isGame = data.projectType === 'game';
+
+const seo = {
+  title: formatTitle(data.title),
+  description: data.description,
+  canonical: canonicalPath,
+  alternates,
+  xDefault,
+  ogType: 'website' as const,
+  ogImage: coverUrl ?? defaultOgImage(),
+  ogImageAlt: data.coverAlt ?? data.title,
+  noindex: false,
+};
+
+const breadcrumbs: BreadcrumbItem[] = [
+  { name: t.nav.home, path: homePath(locale) },
+  { name: t.projects.title, path: localizedPath('projects', locale) },
+  { name: data.title, path },
+];
+
+const jsonLd = graph([
+  personSchema(locale),
+  projectSchema({
+    title: data.title,
+    description: data.description,
+    url: canonicalPath,
+    locale,
+    year: data.year,
+    technologies: data.technologies,
+    image: coverUrl,
+    liveUrl: data.liveUrl,
+    repositoryUrl: data.repositoryUrl,
+    isGame,
+  }),
+  breadcrumbSchema(breadcrumbs),
+]);
+
+/* Facts pane. Every row is present, so the layout never has a gap to fill. */
+const facts = [
+  { label: t.project.role, value: data.role },
+  { label: t.project.type, value: t.projectTypes[data.projectType] },
+  { label: t.project.status, value: t.projectStatuses[data.status] },
+  { label: t.project.year, value: String(data.year) },
+];
+---
+
+<BaseLayout locale={locale} seo={seo} jsonLd={jsonLd} alternatePaths={alternatePaths}>
+  <Container class="pt-10 sm:pt-14">
+    <Breadcrumbs locale={locale} items={breadcrumbs} />
+  </Container>
+
+  <section class="border-b border-border">
+    <Container class="flex flex-col gap-8 pt-8 pb-14">
+      {import.meta.env.DEV && data.draft && <DraftNotice message={t.project.draftNotice} />}
+
+      <div class="flex max-w-measure flex-col gap-5">
+        <div class="flex flex-wrap items-center gap-2">
+          <Badge tone="accent">{t.projectTypes[data.projectType]}</Badge>
+          <Badge tone="outline">{t.projectStatuses[data.status]}</Badge>
+        </div>
+
+        <h1 class="font-serif text-h1 text-ink">{data.title}</h1>
+        <p class="text-lead text-ink-muted">{data.description}</p>
+
+        <ul class="flex flex-wrap gap-1.5">
+          {data.technologies.map((technology) => (
+            <li>
+              <Tag>{technology}</Tag>
+            </li>
+          ))}
+        </ul>
+
+        {
+          /* Links are rendered only when a URL exists — no dead buttons. */
+          (data.liveUrl || data.repositoryUrl) && (
+            <div class="mt-2 flex flex-wrap gap-3">
+              {data.liveUrl && (
+                <ButtonLink href={data.liveUrl} variant="primary">
+                  {isGame ? (
+                    <Play class="size-4" aria-hidden="true" />
+                  ) : (
+                    <ExternalLink class="size-4" aria-hidden="true" />
+                  )}
+                  {isGame ? t.project.playGame : t.project.viewLive}
+                </ButtonLink>
+              )}
+
+              {data.repositoryUrl && (
+                <ButtonLink href={data.repositoryUrl}>
+                  <GithubIcon class="size-4" />
+                  {t.project.viewSource}
+                </ButtonLink>
+              )}
+            </div>
+          )
+        }
+      </div>
+
+      {data.cover && data.coverAlt && (
+        <Image
+          src={data.cover}
+          alt={data.coverAlt}
+          widths={[720, 1200, 1800]}
+          sizes="(min-width: 1280px) 76rem, 100vw"
+          loading="eager"
+          fetchpriority="high"
+          class="rounded-xl border border-border"
+        />
+      )}
+    </Container>
+  </section>
+
+  <Container class="pb-section">
+    <div class="mt-12 flex flex-col gap-12 lg:flex-row lg:items-start lg:gap-16">
+      <div class="order-2 min-w-0 flex-1 lg:order-1 lg:max-w-content">
+        {data.confidential && (
+          <p class="mb-8 flex items-start gap-2.5 rounded-lg border border-border bg-surface-muted px-4 py-3 text-sm text-ink-muted">
+            <Lock class="mt-0.5 size-4 shrink-0 text-ink-subtle" aria-hidden="true" />
+            {t.project.confidentialNotice}
+          </p>
+        )}
+
+        <div class="prose">
+          <Content />
+        </div>
+
+        {data.gallery.length > 0 && (
+          <section aria-labelledby="gallery-heading" class="mt-14 flex flex-col gap-5">
+            <h2 id="gallery-heading" class="font-serif text-h2 text-ink">
+              {t.project.gallery}
+            </h2>
+            <ul class="grid gap-4 sm:grid-cols-2">
+              {data.gallery.map((item) => (
+                <li>
+                  <figure class="flex flex-col gap-2">
+                    <Image
+                      src={item.image}
+                      alt={item.alt}
+                      widths={[480, 960]}
+                      sizes="(min-width: 640px) 50vw, 100vw"
+                      loading="lazy"
+                      decoding="async"
+                      class="rounded-lg border border-border"
+                    />
+                    <figcaption class="text-sm text-ink-muted">{item.alt}</figcaption>
+                  </figure>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        <a
+          href={localizedPath('projects', locale)}
+          class="mt-12 inline-block text-sm text-accent underline decoration-accent-line underline-offset-4 transition-colors hover:decoration-accent"
+        >
+          {t.project.backToList}
+        </a>
+      </div>
+
+      <aside class="order-1 lg:order-2 lg:w-64 lg:shrink-0">
+        <div class="rounded-xl border border-border bg-surface p-6 lg:sticky lg:top-24">
+          <h2 class="font-mono text-micro tracking-[0.12em] text-ink-subtle uppercase">
+            {t.project.summaryLabel}
+          </h2>
+          <dl class="mt-4 flex flex-col gap-4">
+            {facts.map((fact) => (
+              <div class="flex flex-col gap-0.5">
+                <dt class="font-mono text-[0.6875rem] tracking-wide text-ink-subtle uppercase">
+                  {fact.label}
+                </dt>
+                <dd class="text-[0.9375rem] text-ink">{fact.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </aside>
+    </div>
+  </Container>
+
+  {relatedArticles.length > 0 && (
+    <Container class="border-t border-border pt-section pb-section">
+      <div class="max-w-content">
+        <RelatedArticles
+          articles={relatedArticles}
+          locale={locale}
+          title={t.project.relatedArticles}
+        />
+      </div>
+    </Container>
+  )}
+</BaseLayout>

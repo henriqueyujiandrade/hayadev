@@ -1,0 +1,23 @@
+# Build output
+dist/
+.astro/
+.vercel/
+
+# Dependencies
+node_modules/
+
+# Test artifacts
+playwright-report/
+test-results/
+coverage/
+
+# Environment
+.env
+.env.production
+.env.local
+
+# Editors and OS
+.DS_Store
+*.log
+npm-debug.log*
+pnpm-debug.log*

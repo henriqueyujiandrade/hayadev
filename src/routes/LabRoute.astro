@@ -1,0 +1,74 @@
+---
+import ProjectCard from '@components/projects/ProjectCard.astro';
+import { projectGridClass } from '@components/projects/grid';
+import Container from '@components/ui/Container.astro';
+import type { Locale } from '@config/locales';
+import PageLayout from '@layouts/PageLayout.astro';
+import { useTranslations } from '@i18n/index';
+import { getLabProjects } from '@utils/content';
+import { homePath, localizedPath } from '@utils/routes';
+import { buildAlternates, defaultOgImage, formatTitle, pathsForAllLocales } from '@utils/seo';
+import { breadcrumbSchema, graph, personSchema, type BreadcrumbItem } from '@utils/structured-data';
+import { absoluteUrl } from '@utils/url';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const t = useTranslations(locale);
+
+/* The Lab is a second view over the same projects, not a separate collection. */
+const projects = await getLabProjects(locale);
+
+const path = localizedPath('lab', locale);
+const alternatePaths = pathsForAllLocales((target) => localizedPath('lab', target));
+const { alternates, xDefault } = buildAlternates(alternatePaths);
+
+const seo = {
+  title: formatTitle(t.lab.title),
+  description: t.lab.metaDescription,
+  canonical: absoluteUrl(path),
+  alternates,
+  xDefault,
+  ogType: 'website' as const,
+  ogImage: defaultOgImage(),
+  ogImageAlt: t.lab.title,
+  noindex: false,
+};
+
+const breadcrumbs: BreadcrumbItem[] = [
+  { name: t.nav.home, path: homePath(locale) },
+  { name: t.lab.title, path },
+];
+
+const jsonLd = graph([personSchema(locale), breadcrumbSchema(breadcrumbs)]);
+---
+
+<PageLayout
+  locale={locale}
+  seo={seo}
+  jsonLd={jsonLd}
+  alternatePaths={alternatePaths}
+  title={t.lab.title}
+  lead={t.lab.lead}
+  eyebrow="Lab"
+  breadcrumbs={breadcrumbs}
+>
+  <Container class="pt-10 pb-section">
+    {projects.length === 0 ? (
+      <div class="flex max-w-measure flex-col gap-2 rounded-xl border border-border bg-surface-muted/50 p-8">
+        <p class="font-medium text-ink">{t.lab.empty}</p>
+        <p class="text-ink-muted">{t.lab.emptyLead}</p>
+      </div>
+    ) : (
+      <ul class:list={[projectGridClass(projects.length), 'list-none p-0']}>
+        {projects.map((project) => (
+          <li class="flex">
+            <ProjectCard project={project} locale={locale} headingLevel="h2" />
+          </li>
+        ))}
+      </ul>
+    )}
+  </Container>
+</PageLayout>

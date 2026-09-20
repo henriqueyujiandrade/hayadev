@@ -1,0 +1,20 @@
+---
+import Eyebrow from './Eyebrow.astro';
+
+interface Props {
+  title: string;
+  eyebrow?: string;
+  lead?: string;
+  /** Heading level. Sections inside a page body are usually `h2`. */
+  as?: 'h1' | 'h2' | 'h3';
+  class?: string;
+}
+
+const { title, eyebrow, lead, as: Tag = 'h2', class: className = '' } = Astro.props;
+---
+
+<div class:list={['flex flex-col gap-3', className]}>
+  {eyebrow && <Eyebrow>{eyebrow}</Eyebrow>}
+  <Tag class="font-serif text-h2 text-ink">{title}</Tag>
+  {lead && <p class="max-w-measure text-ink-muted">{lead}</p>}
+</div>

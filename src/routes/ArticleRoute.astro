@@ -1,0 +1,207 @@
+---
+import { Image } from 'astro:assets';
+import { render } from 'astro:content';
+import ArticleMeta from '@components/articles/ArticleMeta.astro';
+import ArticleNavigation from '@components/articles/ArticleNavigation.astro';
+import RelatedArticles from '@components/articles/RelatedArticles.astro';
+import ShareLinks from '@components/articles/ShareLinks.astro';
+import TableOfContents from '@components/articles/TableOfContents.astro';
+import RelatedProjects from '@components/projects/RelatedProjects.astro';
+import Breadcrumbs from '@components/seo/Breadcrumbs.astro';
+import Container from '@components/ui/Container.astro';
+import DraftNotice from '@components/ui/DraftNotice.astro';
+import Tag from '@components/ui/Tag.astro';
+import type { Locale } from '@config/locales';
+import { person } from '@config/person';
+import BaseLayout from '@layouts/BaseLayout.astro';
+import { useTranslations } from '@i18n/index';
+import {
+  getAdjacentArticles,
+  getArticleLocales,
+  getRelatedArticles,
+  getRelatedProjects,
+  type LocalizedArticle,
+} from '@utils/content';
+import { toISODateTime } from '@utils/date';
+import { homePath, localizedPath } from '@utils/routes';
+import { buildAlternates, defaultOgImage, formatTitle, pathsForLocales } from '@utils/seo';
+import {
+  articleSchema,
+  breadcrumbSchema,
+  graph,
+  personSchema,
+  type BreadcrumbItem,
+} from '@utils/structured-data';
+import { absoluteUrl } from '@utils/url';
+
+interface Props {
+  article: LocalizedArticle;
+  locale: Locale;
+}
+
+const { article, locale } = Astro.props;
+const t = useTranslations(locale);
+const { data } = article;
+
+const { Content, headings } = await render(article.entry);
+
+const [translatedLocales, related, relatedProjects, adjacent] = await Promise.all([
+  getArticleLocales(article.translationKey),
+  getRelatedArticles(article, 2),
+  getRelatedProjects(article),
+  getAdjacentArticles(article),
+]);
+
+const path = localizedPath('articles', locale, article.slug);
+const canonicalPath = absoluteUrl(path);
+
+/* Only locales this article was actually translated into are advertised. */
+const alternatePaths = pathsForLocales(translatedLocales, (target) =>
+  localizedPath('articles', target, article.slug),
+);
+const { alternates, xDefault } = buildAlternates(alternatePaths);
+
+const heroImageUrl = data.heroImage ? absoluteUrl(data.heroImage.src) : undefined;
+
+const seo = {
+  title: formatTitle(data.title),
+  description: data.description,
+  /* An article first published elsewhere points its canonical back there. */
+  canonical: data.canonical ?? canonicalPath,
+  alternates,
+  xDefault,
+  ogType: 'article' as const,
+  ogImage: heroImageUrl ?? defaultOgImage(),
+  ogImageAlt: data.heroImageAlt ?? data.title,
+  noindex: false,
+  publishedTime: toISODateTime(data.pubDate),
+  modifiedTime: toISODateTime(data.updatedDate ?? data.pubDate),
+};
+
+const breadcrumbs: BreadcrumbItem[] = [
+  { name: t.nav.home, path: homePath(locale) },
+  { name: t.articles.title, path: localizedPath('articles', locale) },
+  { name: data.title, path },
+];
+
+const jsonLd = graph([
+  personSchema(locale),
+  articleSchema({
+    title: data.title,
+    description: data.description,
+    url: canonicalPath,
+    locale,
+    pubDate: data.pubDate,
+    updatedDate: data.updatedDate,
+    image: heroImageUrl,
+    tags: data.tags,
+    category: t.categories[data.category],
+  }),
+  breadcrumbSchema(breadcrumbs),
+]);
+---
+
+<BaseLayout locale={locale} seo={seo} jsonLd={jsonLd} alternatePaths={alternatePaths}>
+  <Container class="pt-10 pb-section sm:pt-14">
+    {/*
+      The trail sits inside the reading column rather than the full container:
+      on wide screens the article is centred beside the contents, so a trail
+      pinned to the container edge would not line up with the text below it.
+    */}
+    <div class="mx-auto flex max-w-content flex-col gap-12 xl:max-w-none xl:flex-row xl:justify-center">
+      <div class="flex w-full min-w-0 flex-col gap-6 xl:max-w-content">
+        <Breadcrumbs locale={locale} items={breadcrumbs} />
+
+        <article class="flex flex-col gap-8">
+          <header class="flex flex-col gap-5">
+            {import.meta.env.DEV && data.draft && <DraftNotice message={t.article.draftNotice} />}
+
+            <p class="font-mono text-micro tracking-[0.12em] text-accent uppercase">
+              {t.categories[data.category]}
+            </p>
+
+            <h1 class="font-serif text-h1 text-ink">{data.title}</h1>
+
+            <p class="text-lead text-ink-muted">{data.description}</p>
+
+            <div class="flex flex-wrap items-center justify-between gap-4 border-y border-border py-4">
+              <ArticleMeta article={article} locale={locale} />
+              <ShareLinks url={canonicalPath} title={data.title} locale={locale} />
+            </div>
+          </header>
+
+          {data.heroImage && data.heroImageAlt && (
+            <Image
+              src={data.heroImage}
+              alt={data.heroImageAlt}
+              widths={[640, 1024, 1440]}
+              sizes="(min-width: 1280px) 44rem, (min-width: 640px) 90vw, 100vw"
+              loading="eager"
+              fetchpriority="high"
+              class="rounded-xl border border-border"
+            />
+          )}
+
+          {/* Contents on narrow screens: collapsed, and still plain HTML. */}
+          <details class="rounded-lg border border-border bg-surface-muted/50 p-4 xl:hidden">
+            <summary class="cursor-pointer font-mono text-micro tracking-[0.12em] text-ink-muted uppercase">
+              {t.article.tableOfContents}
+            </summary>
+            <div class="mt-4">
+              <TableOfContents headings={headings} locale={locale} />
+            </div>
+          </details>
+
+          <div class="prose">
+            <Content />
+          </div>
+
+          <footer class="flex flex-col gap-6 border-t border-border pt-8">
+            <div class="flex flex-col gap-3">
+              <h2 class="font-mono text-micro tracking-[0.12em] text-ink-subtle uppercase">
+                {t.article.tags}
+              </h2>
+              <ul class="flex flex-wrap gap-1.5">
+                {data.tags.map((tag) => (
+                  <li>
+                    <Tag>{tag}</Tag>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <p class="text-sm text-ink-muted">{person.fullName || person.name}</p>
+
+            <a
+              href={localizedPath('articles', locale)}
+              class="text-sm text-accent underline decoration-accent-line underline-offset-4 transition-colors hover:decoration-accent"
+            >
+              {t.article.backToList}
+            </a>
+          </footer>
+        </article>
+      </div>
+
+      {/* Contents on wide screens: pinned beside the text. */}
+      <aside class="hidden xl:block xl:w-60 xl:shrink-0">
+        <div class="sticky top-24">
+          <TableOfContents headings={headings} locale={locale} />
+        </div>
+      </aside>
+    </div>
+  </Container>
+
+  {(related.length > 0 || relatedProjects.length > 0 || adjacent.previous || adjacent.next) && (
+    <Container class="flex flex-col gap-12 border-t border-border pt-section pb-section">
+      <div class="mx-auto flex w-full max-w-content flex-col gap-12">
+        <RelatedProjects
+          projects={relatedProjects}
+          locale={locale}
+          title={t.article.relatedProjects}
+        />
+        <RelatedArticles articles={related} locale={locale} title={t.article.relatedArticles} />
+        <ArticleNavigation previous={adjacent.previous} next={adjacent.next} locale={locale} />
+      </div>
+    </Container>
+  )}
+</BaseLayout>

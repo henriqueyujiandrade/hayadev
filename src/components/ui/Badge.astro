@@ -1,0 +1,26 @@
+---
+interface Props {
+  /** `accent` marks status and featured items; `neutral` is informational. */
+  tone?: 'accent' | 'neutral' | 'outline';
+  class?: string;
+}
+
+const { tone = 'neutral', class: className = '' } = Astro.props;
+
+const tones = {
+  accent: 'bg-accent-soft text-accent border-accent-line',
+  neutral: 'bg-surface-muted text-ink-muted border-border',
+  outline: 'bg-transparent text-ink-muted border-border-strong',
+} as const;
+---
+
+<span
+  class:list={[
+    'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5',
+    'font-mono text-[0.6875rem] tracking-wide uppercase',
+    tones[tone],
+    className,
+  ]}
+>
+  <slot />
+</span>

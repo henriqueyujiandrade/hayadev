@@ -1,0 +1,19 @@
+---
+interface Props {
+  /** `wide` for listings and grids, `content` for long-form reading. */
+  width?: 'wide' | 'content';
+  as?: 'div' | 'section' | 'header' | 'footer' | 'nav' | 'article';
+  class?: string;
+}
+
+const { width = 'wide', as: Tag = 'div', class: className = '' } = Astro.props;
+
+const widths = {
+  wide: 'max-w-wide',
+  content: 'max-w-content',
+} as const;
+---
+
+<Tag class:list={['mx-auto w-full px-5 sm:px-8', widths[width], className]}>
+  <slot />
+</Tag>

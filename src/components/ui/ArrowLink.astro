@@ -1,0 +1,30 @@
+---
+import { ArrowRight } from '@lucide/astro';
+
+interface Props {
+  href: string;
+  class?: string;
+}
+
+const { href, class: className = '' } = Astro.props;
+---
+
+{/*
+  Inline "keep reading" affordance. The arrow nudges on hover only — the link is
+  fully usable without it, and the movement is suppressed by reduced-motion.
+*/}
+<a
+  href={href}
+  class:list={[
+    'group inline-flex items-center gap-1.5 text-[0.9375rem] font-medium text-accent',
+    'underline decoration-accent-line decoration-1 underline-offset-4',
+    'transition-colors hover:decoration-accent',
+    className,
+  ]}
+>
+  <slot />
+  <ArrowRight
+    class="size-4 transition-transform duration-150 group-hover:translate-x-0.5"
+    aria-hidden="true"
+  />
+</a>

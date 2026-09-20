@@ -1,0 +1,13 @@
+---
+interface Props {
+  as?: 'p' | 'span' | 'div' | 'h2';
+  class?: string;
+}
+
+const { as: Tag = 'span', class: className = '' } = Astro.props;
+---
+
+{/* Small monospaced label. The mono face is the site's quiet technical signal. */}
+<Tag class:list={['font-mono text-micro tracking-[0.12em] text-ink-muted uppercase', className]}>
+  <slot />
+</Tag>

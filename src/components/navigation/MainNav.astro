@@ -1,0 +1,49 @@
+---
+import { primaryNav } from '@config/navigation';
+import type { Locale } from '@config/locales';
+import { useTranslations } from '@i18n/index';
+import { localizedPath } from '@utils/routes';
+
+interface Props {
+  locale: Locale;
+  /** `bar` is the desktop row; `stack` is the mobile panel. */
+  layout?: 'bar' | 'stack';
+  class?: string;
+}
+
+const { locale, layout = 'bar', class: className = '' } = Astro.props;
+const t = useTranslations(locale);
+const current = Astro.url.pathname;
+
+const items = primaryNav.map((item) => {
+  const href = localizedPath(item.route, locale);
+  return {
+    href,
+    label: t.nav[item.labelKey],
+    /** A section is current when the URL sits anywhere inside it. */
+    isCurrent: current === href || current.startsWith(href),
+  };
+});
+---
+
+<ul
+  class:list={[layout === 'bar' ? 'flex items-center gap-1' : 'flex flex-col gap-0.5', className]}
+>
+  {items.map((item) => (
+    <li>
+      <a
+        href={item.href}
+        aria-current={item.isCurrent ? 'page' : undefined}
+        class:list={[
+          'block rounded-md transition-colors',
+          layout === 'bar' ? 'px-3 py-1.5 text-[0.9375rem]' : 'px-3 py-2.5 text-base',
+          item.isCurrent
+            ? 'font-medium text-ink'
+            : 'text-ink-muted hover:bg-surface-muted hover:text-ink',
+        ]}
+      >
+        {item.label}
+      </a>
+    </li>
+  ))}
+</ul>

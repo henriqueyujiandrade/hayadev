@@ -1,0 +1,135 @@
+---
+title: Idempotência em endpoints de criação
+description: O cliente reenviou o pedido e agora existem duas cobranças. Como desenhar endpoints de criação que toleram repetição sem duplicar efeitos.
+pubDate: 2026-07-30
+draft: true
+category: architecture
+tags:
+  - APIs
+  - PostgreSQL
+  - Backend
+relatedArticles:
+  - regras-de-negocio-http
+---
+
+Um `POST` que cria um recurso não é seguro para repetir. Se a resposta se perde
+no caminho, o cliente não sabe se a operação aconteceu — e a atitude razoável
+dele é tentar de novo. Se o servidor tratar a segunda tentativa como um pedido
+novo, existem agora dois registros.
+
+Em fluxos de pagamento e em consumidores de fila isso deixa de ser hipotético.
+Filas entregam **pelo menos uma vez**; reentrega é comportamento normal, não
+falha.
+
+## O que idempotência exige
+
+Uma operação é idempotente quando executá-la várias vezes produz o mesmo estado
+final que executá-la uma vez. Para um endpoint de criação, isso significa duas
+coisas ao mesmo tempo:
+
+- o efeito colateral acontece **uma vez**;
+- a resposta é a **mesma** em todas as tentativas.
+
+A segunda parte é frequentemente esquecida. Devolver `409 Conflict` numa
+repetição tecnicamente evita a duplicação, mas transfere para o cliente um
+problema que ele não consegue resolver: ele continua sem saber o identificador do
+recurso que criou.
+
+## A chave vem do cliente
+
+A abordagem que funciona é o cliente enviar uma chave de idempotência — um valor
+único que ele gera por _intenção_, não por tentativa.
+
+```http
+POST /v1/payments
+Idempotency-Key: 4f1a9c2e-6c1d-4a5b-8f21-3f9b0f5c2e77
+Content-Type: application/json
+
+{"amount": 4990, "currency": "BRL"}
+```
+
+Todas as retentativas do mesmo pedido carregam a mesma chave. Um pedido
+genuinamente novo carrega uma chave nova. Essa distinção é do cliente porque só
+ele a conhece: dois pagamentos idênticos de mesmo valor, no mesmo segundo, podem
+ser legítimos.
+
+## A garantia tem que estar no banco
+
+A implementação ingênua consulta antes de escrever:
+
+```python
+# Incorreto: há uma janela entre a consulta e a escrita.
+if Payment.objects.filter(idempotency_key=key).exists():
+    return existing
+return Payment.objects.create(...)
+```
+
+Duas requisições concorrentes passam pelo `exists()` antes de qualquer uma
+escrever, e ambas criam. A janela é pequena e por isso o bug é intermitente — que
+é a pior categoria de bug.
+
+A garantia precisa vir de uma restrição que o banco aplica:
+
+```sql
+ALTER TABLE payments
+  ADD CONSTRAINT payments_idempotency_key_unique UNIQUE (idempotency_key);
+```
+
+E o código passa a tratar a violação como um caminho esperado, não excepcional:
+
+```python
+def create_payment(key: str, amount: int, currency: str) -> Payment:
+    try:
+        with transaction.atomic():
+            return Payment.objects.create(
+                idempotency_key=key, amount=amount, currency=currency
+            )
+    except IntegrityError:
+        # Outra tentativa da mesma intenção venceu a corrida.
+        return Payment.objects.get(idempotency_key=key)
+```
+
+Tentar escrever e tratar o conflito é mais correto do que consultar e depois
+escrever, porque a decisão acontece num ponto onde o banco garante atomicidade.
+
+## Mesma chave, payload diferente
+
+Falta um caso: a mesma chave chega com um corpo diferente. Isso não é uma
+retentativa — é um erro do cliente, e silenciá-lo esconde um defeito.
+
+Guardar um hash do payload junto com a chave permite detectá-lo:
+
+```python
+if existing.request_hash != hash_payload(payload):
+    raise IdempotencyKeyReused(key)
+```
+
+A resposta adequada é `422`, indicando que a chave já pertence a outra intenção.
+
+## Webhooks são o mesmo problema
+
+Um endpoint que recebe webhooks tem exatamente essa forma. O provedor reenvia até
+receber confirmação, e o identificador do evento já é a chave de idempotência:
+
+```python
+def handle_event(event_id: str, payload: dict) -> None:
+    try:
+        with transaction.atomic():
+            ProcessedEvent.objects.create(event_id=event_id)
+    except IntegrityError:
+        return  # Já processado; reentrega esperada.
+
+    apply_event(payload)
+```
+
+Registrar o evento **dentro** da mesma transação que o processa é o que impede
+que uma falha no meio do caminho deixe o evento marcado como processado sem que
+seus efeitos tenham ocorrido.
+
+## O princípio
+
+Idempotência não é uma camada que se adiciona depois — é uma propriedade do
+modelo de dados. Ela se apoia numa restrição única sobre um identificador
+fornecido pelo cliente, aplicada pelo banco.
+
+Se a garantia depende de um `if` na aplicação, ela ainda não existe.

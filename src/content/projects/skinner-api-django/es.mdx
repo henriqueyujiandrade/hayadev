@@ -1,0 +1,150 @@
+---
+title: Skinner API (Django)
+description: Backend en Django REST Framework y PostgreSQL de una plataforma SaaS multi-tenant para clínicas de ABA, con juegos de biofeedback e informes en PDF. Desarrollado en Self.
+shortDescription: API multi-tenant en Django REST Framework para clínicas de ABA, con juegos e informes.
+projectType: api
+status: completed
+role: Desarrollo y evolución de la API y de la base de datos
+technologies:
+  - Python
+  - Django
+  - Django REST Framework
+  - PostgreSQL
+  - AWS Lambda
+  - Zappa
+  - ReportLab
+  - Matplotlib
+year: 2023
+featured: false
+confidential: true
+caseStudy: true
+order: 25
+---
+
+La **Skinner API (Django)** es la primera generación del backend de Skinner, una
+plataforma SaaS para clínicas de ABA con juegos de biofeedback. Es un monolito en
+Django REST Framework y PostgreSQL que gestiona clínicas, pacientes, equipos, el
+ciclo de entrenamientos y sesiones e informes en PDF. Fue desarrollada en Self y
+evolucionada de 2023 a 2026 — a partir de mayo de 2023 se rehicieron la base de
+datos y la estructura de apps —, y está concluida: las reescrituras en NestJS, el
+proyecto Skinner y la KeepGames API, descritos en otras páginas, la sustituyen.
+
+Lo que sigue son las decisiones técnicas detrás de ella y lo que enseñó.
+
+## Un monolito por dominio, aislado por clínica
+
+Son 27 apps de Django, cada una con la misma anatomía — models, views, serializers,
+rutas y permisos —, y el aislamiento entre clínicas es la regla que organiza todo lo
+demás. Toda entidad pertenece a una clínica:
+
+- La clínica **viene del usuario autenticado**, nunca del cuerpo de la solicitud, y
+  la asigna el servidor al crear.
+- Las claves foráneas recibidas en un payload — paciente, entrenamiento, aplicador —
+  se validan como pertenecientes a la misma clínica.
+- Los datos de referencia globales son de solo lectura, y los datos «del sistema»,
+  sin clínica, pueden leerse pero no modificarse.
+- Una lista de verificación de aislamiento, documentada en el repositorio, vale para
+  todo endpoint nuevo o modificado.
+- Los roles son grupos de Django, con clases de permiso sobre los permisos de modelo
+  y una comprobación de pertenencia del objeto por clínica.
+
+La autenticación sigue el mismo cuidado: tokens propios, uno por dispositivo y con
+vencimiento, e inicio de sesión por correo o apodo sin distinguir mayúsculas. Los
+juegos tienen una autenticación separada — una clave de sesión que canjean por el
+contexto —, y ese patrón nació aquí y se mantuvo en las reescrituras.
+
+## Consultas que solo pagan cuando lo necesitan
+
+Las reglas del proyecto exigen `select_related` y `prefetch_related` contra las
+consultas N+1, con un matiz de DRF: `get_queryset()` también se llama en PATCH y
+DELETE, para encontrar el objeto, así que cargar relaciones allí hace que la
+escritura pague por joins que no usa. La optimización vale solo para la lectura,
+como en las views de usuarios y pacientes:
+
+```python
+class ReportDetail(generics.RetrieveUpdateDestroyAPIView):
+    def get_queryset(self):
+        queryset = Report.objects.all()
+        # PATCH y DELETE también pasan por aquí, y no necesitan los joins.
+        if self.request.method == 'GET':
+            queryset = queryset.select_related('owner').prefetch_related('tags')
+        return queryset
+```
+
+Serializers simples y reutilizables, uno por app, evitan la duplicación y los
+imports circulares entre serializers.
+
+## Informes en PDF, generados en el servidor
+
+Los informes de las partidas con sensor son un pipeline dentro de la propia API. La
+señal bruta de frecuencia cardíaca se procesa, con filtro de artefactos y RMSSD en
+ventana deslizante, y los gráficos de Matplotlib se generan **en paralelo**. El PDF,
+armado con ReportLab con la identidad visual de la clínica, va a S3, y el informe se
+registra con `update_or_create` sobre el paciente, el juego y el momento de la
+partida, así que generarlo de nuevo no duplica nada. Hay una variante para partidas
+sin sensor. El despliegue es en AWS Lambda, con Zappa, un manejador delgado y mucha
+memoria.
+
+## Una agenda que nunca salió al aire
+
+Existe una agenda en el repositorio — disponibilidad del aplicador, sesiones,
+recurrencias, indisponibilidades y detección de conflictos entre el aplicador y el
+paciente —, pero se agregó por encima del modelo de datos existente y nunca llegó a
+producción ni se validó en uso real. Con la base de datos ya demasiado compleja, la
+decisión fue no insistir con ella: el nuevo Skinner se construyó desde cero, ya con
+la agenda en el diseño.
+
+## Un asistente de IA con alcance de clínica
+
+Existe un asistente de IA para la gestión de la clínica, que responde consultando
+sus datos mediante «herramientas». El punto de seguridad es el mismo del resto del
+sistema: la clínica que se pasa a las herramientas **viene del usuario
+autenticado**, y no de lo que devuelve el modelo. El protocolo de llamada a
+herramientas se implementó a mano, sobre el texto de la respuesta.
+
+## Lo que enseñó
+
+Tres años de dominio real dejaron lecciones concretas, y cada una se volvió una
+decisión en las reescrituras:
+
+- **Regla de dominio en la capa de transporte.** La progresión de un entrenamiento,
+  de aprendizaje a mantenimiento, ocurre dentro del método de validación de un
+  serializer, con escrituras en la base de datos, y la disponibilidad de tareas vive
+  en un filtro de view. Funciona, pero es difícil de probar y de reutilizar. En las
+  reescrituras, las decisiones son funciones puras, y la escritura ocurre en una
+  transacción.
+- **Una fase modelada como objeto clonado.** Promover un entrenamiento de fase creaba
+  otro entrenamiento, lo que fragmentaba el historial. En las reescrituras, la fase
+  es un estado de la tarea, con un evento en cada transición.
+- **Una tabla por juego.** Cada juego tenía su propio modelo. En las reescrituras, un
+  par de tablas sirve a todos, con JSON para lo específico de cada uno.
+- **Recurrencia como lista de días.** En la agenda que no salió al aire, la
+  recurrencia es un array de días de la semana, expandido al leer en un único método
+  de unas 240 líneas, con tres numeraciones de día de la semana conviviendo en el
+  código. En el nuevo Skinner, la recurrencia es una regla RFC 5545, expandida bajo
+  demanda, con una sola convención.
+- **Pruebas concentradas.** Las pruebas automatizadas se concentran en usuarios y
+  pacientes: 142 métodos de integración sobre la API. Las demás apps no tienen
+  cobertura, y la agenda, que nunca llegó a producción, tiene pruebas escritas, pero
+  nunca se validó en uso real. Las reescrituras nacieron con pruebas unitarias y e2e
+  por módulo.
+
+## Calidad y operación
+
+Son 27 apps, 72 models, 240 migraciones y unas 31 mil líneas de Python, sin contar
+las migraciones. La documentación de la API sale del código, con OpenAPI mediante
+drf-spectacular, en Swagger y ReDoc, y cada dominio complejo — cálculo de
+variabilidad cardíaca y API de juegos — tiene un documento propio en
+el repositorio. El código se formatea con Black. La API corre en AWS Lambda con
+Zappa, en Python 3.11, con PostgreSQL, S3 para archivos y SES para correo, y el
+repositorio también trae la configuración para Elastic Beanstalk.
+
+## Qué demuestra este proyecto
+
+Desde el punto de vista de la ingeniería, el interés aquí es la trayectoria: un
+monolito Django que acumuló tres años de dominio real — multi-tenant, juegos con
+telemetría e informes en PDF — y cuyas lecciones, reglas fuera de la capa de
+transporte, hechos inmutables, ocurrencias virtuales y pruebas, orientaron las
+reescrituras.
+
+El proyecto está concluido.

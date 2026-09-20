@@ -1,0 +1,31 @@
+---
+import { type Locale } from '@config/locales';
+import { siteConfig } from '@config/site';
+import { useTranslations } from '@i18n/index';
+import { homePath } from '@utils/routes';
+
+import BrandMark from './BrandMark.astro';
+
+interface Props {
+  locale: Locale;
+  class?: string;
+}
+
+const { locale, class: className = '' } = Astro.props;
+const t = useTranslations(locale);
+const href = homePath(locale);
+const isHome = Astro.url.pathname === href;
+---
+
+<a
+  href={href}
+  aria-label={`${siteConfig.name} — ${t.nav.home}`}
+  aria-current={isHome ? 'page' : undefined}
+  class:list={[
+    'inline-flex items-center gap-2.5 rounded-md text-ink transition-opacity hover:opacity-80',
+    className,
+  ]}
+>
+  <BrandMark />
+  <span class="text-[1.0625rem] font-semibold tracking-[-0.015em]">{siteConfig.name}</span>
+</a>

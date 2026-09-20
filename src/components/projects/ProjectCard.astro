@@ -1,0 +1,88 @@
+---
+import { Image } from 'astro:assets';
+import Badge from '@components/ui/Badge.astro';
+import Tag from '@components/ui/Tag.astro';
+import type { Locale } from '@config/locales';
+import { useTranslations } from '@i18n/index';
+import { localizedPath } from '@utils/routes';
+import type { LocalizedProject } from '@utils/content';
+
+interface Props {
+  project: LocalizedProject;
+  locale: Locale;
+  /** Featured cards span the full width and show the cover larger. */
+  featured?: boolean;
+  /** Heading level, so the card fits the page's outline. */
+  headingLevel?: 'h2' | 'h3';
+}
+
+const { project, locale, featured = false, headingLevel: Heading = 'h3' } = Astro.props;
+const t = useTranslations(locale);
+
+const { data } = project;
+const href = localizedPath('projects', locale, project.slug);
+const technologies = data.technologies.slice(0, featured ? 6 : 4);
+const remaining = data.technologies.length - technologies.length;
+---
+
+{/*
+  The title carries the only link; a stretched pseudo-element makes the whole
+  card clickable without adding a second, redundant tab stop.
+*/}
+<article
+  class:list={[
+    'group relative flex flex-col overflow-hidden rounded-xl border border-border bg-surface',
+    'transition-colors duration-150 hover:border-border-strong',
+    'focus-within:border-border-strong',
+    featured && 'sm:flex-row',
+  ]}
+>
+  {data.cover && data.coverAlt && (
+    <div
+      class:list={[
+        'overflow-hidden border-border bg-surface-muted',
+        featured ? 'border-b sm:w-2/5 sm:border-e sm:border-b-0' : 'border-b',
+      ]}
+    >
+      <Image
+        src={data.cover}
+        alt={data.coverAlt}
+        widths={[400, 800]}
+        sizes={featured ? '(min-width: 640px) 40vw, 100vw' : '(min-width: 1024px) 33vw, 100vw'}
+        loading="lazy"
+        decoding="async"
+        class="aspect-[16/10] size-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+      />
+    </div>
+  )}
+
+  <div class="flex flex-1 flex-col gap-4 p-6">
+    <div class="flex flex-wrap items-center gap-2">
+      <Badge tone="accent">{t.projectTypes[data.projectType]}</Badge>
+      <Badge tone="outline">{t.projectStatuses[data.status]}</Badge>
+      <span class="ms-auto font-mono text-[0.6875rem] text-ink-subtle">{data.year}</span>
+    </div>
+
+    <div class="flex flex-col gap-2">
+      <Heading class="text-h3 font-semibold text-ink">
+        <a href={href} class="after:absolute after:inset-0 after:content-['']">
+          {data.title}
+        </a>
+      </Heading>
+      <p class="text-[0.9375rem] text-ink-muted">{data.shortDescription}</p>
+    </div>
+
+    <ul class="mt-auto flex flex-wrap gap-1.5 pt-2">
+      {technologies.map((technology) => (
+        <li>
+          <Tag>{technology}</Tag>
+        </li>
+      ))}
+      {remaining > 0 && (
+        <li>
+          <Tag>{`+${remaining}`}</Tag>
+        </li>
+      )}
+    </ul>
+  </div>
+</article>

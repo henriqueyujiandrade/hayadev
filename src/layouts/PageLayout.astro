@@ -1,0 +1,39 @@
+---
+import BaseLayout from '@layouts/BaseLayout.astro';
+import Breadcrumbs from '@components/seo/Breadcrumbs.astro';
+import Container from '@components/ui/Container.astro';
+import type { Locale } from '@config/locales';
+import type { BreadcrumbItem } from '@utils/structured-data';
+import type { SeoData } from '@utils/seo';
+
+interface Props {
+  locale: Locale;
+  seo: SeoData;
+  jsonLd?: string;
+  alternatePaths?: Partial<Record<Locale, string>>;
+  /** Page heading. Rendered as the single `h1`. */
+  title: string;
+  /** Short introduction shown under the heading. */
+  lead?: string;
+  eyebrow?: string;
+  breadcrumbs?: readonly BreadcrumbItem[];
+}
+
+const { locale, seo, jsonLd, alternatePaths, title, lead, eyebrow, breadcrumbs } = Astro.props;
+---
+
+<BaseLayout locale={locale} seo={seo} jsonLd={jsonLd} alternatePaths={alternatePaths}>
+  <Container class="pt-10 pb-4 sm:pt-16">
+    {breadcrumbs && breadcrumbs.length > 0 && <Breadcrumbs locale={locale} items={breadcrumbs} />}
+
+    <header class="mt-6 flex max-w-measure flex-col gap-4">
+      {eyebrow && (
+        <span class="font-mono text-micro tracking-[0.12em] text-accent uppercase">{eyebrow}</span>
+      )}
+      <h1 class="font-serif text-h1 text-ink">{title}</h1>
+      {lead && <p class="text-lead text-ink-muted">{lead}</p>}
+    </header>
+  </Container>
+
+  <slot />
+</BaseLayout>

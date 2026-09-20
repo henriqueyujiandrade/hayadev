@@ -1,0 +1,119 @@
+---
+title: Perspective placement in a 2D game
+description: Deriving scale, depth and draw order from a single coordinate, turning scene composition into data instead of manual pixel tweaking.
+pubDate: 2026-09-10
+draft: true
+featured: true
+category: games
+tags:
+  - TypeScript
+  - Canvas
+  - Games
+relatedProjects:
+  - hidden-object
+---
+
+In a 2D game with an illustrated backdrop, the moment everything starts looking
+wrong is when the same object is placed at two different points in the scene.
+Sitting on the bottom edge it works. Moved to the back, it stays the same size —
+and immediately stops belonging to the illustration.
+
+The intuitive fix is to resize each object by hand. That works for ten objects
+and becomes unsustainable at a hundred.
+
+## Scale is derived, not declared
+
+The observation that solves the problem is that, in a scene with a vanishing
+point, an object's scale is not a property of the object. It is a **function of
+its position**.
+
+```ts
+interface PerspectiveConfig {
+  horizon: number;
+  nearScale: number;
+  farScale: number;
+}
+
+function scaleAt(y: number, config: PerspectiveConfig): number {
+  const { horizon, nearScale, farScale } = config;
+  const depth = (y - horizon) / (1 - horizon);
+  return farScale + (nearScale - farScale) * clamp(depth, 0, 1);
+}
+```
+
+The data model then describes only where the object meets the ground:
+
+```ts
+interface PlacedObject {
+  id: string;
+  sprite: string;
+  anchor: { x: number; y: number };
+}
+```
+
+No `width` field, no `scale` field. An object placed at `y: 0.82` is large
+because it is near; an object at `y: 0.31` is small because it is far.
+
+## The anchor point matters
+
+Choosing the sprite's reference point is not a detail. Anchoring at the centre
+produces a subtle, persistent error: as the scale changes, the object appears to
+slide vertically, because the centre moves while the base should stay put.
+
+Anchoring at the base makes the ground contact point invariant under scaling. The
+object grows upward, which is exactly what perspective requires.
+
+| Anchor | Effect when scaling              |
+| ------ | -------------------------------- |
+| Centre | The object slides vertically     |
+| Base   | The object grows from the ground |
+
+## One coordinate, three behaviours
+
+The real payoff shows up once you notice the same variable solves two other
+problems.
+
+**Draw order.** Nearer objects must cover more distant ones:
+
+```ts
+const drawOrder = [...objects].sort((a, b) => a.anchor.y - b.anchor.y);
+```
+
+**Hit detection.** The test walks the scene in reverse, front to back, so the
+object visually on top answers first:
+
+```ts
+for (const object of [...objects].sort((a, b) => b.anchor.y - a.anchor.y)) {
+  if (containsPoint(boundsOf(object, scene), point)) return object;
+}
+```
+
+Scale, occlusion and click priority all derive from `anchor.y`. There are not
+three systems to keep in sync — there is one.
+
+## Resolution independence
+
+Storing positions normalized, between 0 and 1, and converting to pixels only at
+draw time has a consequence that justifies the decision on its own: the scene
+stops depending on screen size.
+
+```ts
+function toCanvas(anchor: Point, scene: Rect): Point {
+  return {
+    x: scene.x + anchor.x * scene.width,
+    y: scene.y + anchor.y * scene.height,
+  };
+}
+```
+
+Resizing the window recomputes the projection. The level data does not change.
+
+## The pattern underneath
+
+The principle is worth isolating, because it is not specific to games: **when a
+value can be derived, do not store it**. A redundant `scale` field is a standing
+opportunity for inconsistency — someone will update the position and forget the
+scale.
+
+Scene composition stopped being visual fiddling and became a data file that
+describes where each object stands in the world.

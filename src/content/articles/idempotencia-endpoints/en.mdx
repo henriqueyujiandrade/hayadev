@@ -1,0 +1,135 @@
+---
+title: Idempotency in creation endpoints
+description: The client retried and now there are two charges. How to design creation endpoints that tolerate repetition without duplicating their effects.
+pubDate: 2026-07-30
+draft: true
+category: architecture
+tags:
+  - APIs
+  - PostgreSQL
+  - Backend
+relatedArticles:
+  - regras-de-negocio-http
+---
+
+A `POST` that creates a resource is not safe to repeat. If the response is lost
+on the way back, the client does not know whether the operation happened — and
+the reasonable thing for it to do is try again. If the server treats the second
+attempt as a fresh request, there are now two records.
+
+In payment flows and queue consumers this stops being hypothetical. Queues
+deliver **at least once**; redelivery is normal behaviour, not a fault.
+
+## What idempotency requires
+
+An operation is idempotent when running it several times leaves the same final
+state as running it once. For a creation endpoint that means two things at the
+same time:
+
+- the side effect happens **once**;
+- the response is the **same** on every attempt.
+
+The second half is often forgotten. Returning `409 Conflict` on a retry
+technically avoids the duplicate, but hands the client a problem it cannot
+solve: it still does not know the identifier of the resource it created.
+
+## The key comes from the client
+
+The approach that works is for the client to send an idempotency key — a unique
+value it generates per _intent_, not per attempt.
+
+```http
+POST /v1/payments
+Idempotency-Key: 4f1a9c2e-6c1d-4a5b-8f21-3f9b0f5c2e77
+Content-Type: application/json
+
+{"amount": 4990, "currency": "BRL"}
+```
+
+Every retry of the same request carries the same key. A genuinely new request
+carries a new one. That distinction belongs to the client because only the client
+knows it: two identical payments for the same amount, in the same second, may
+both be legitimate.
+
+## The guarantee has to live in the database
+
+The naive implementation reads before writing:
+
+```python
+# Wrong: there is a window between the read and the write.
+if Payment.objects.filter(idempotency_key=key).exists():
+    return existing
+return Payment.objects.create(...)
+```
+
+Two concurrent requests both pass the `exists()` check before either writes, and
+both create. The window is small, which is exactly why the bug is intermittent —
+the worst category of bug.
+
+The guarantee has to come from a constraint the database enforces:
+
+```sql
+ALTER TABLE payments
+  ADD CONSTRAINT payments_idempotency_key_unique UNIQUE (idempotency_key);
+```
+
+And the code treats the violation as an expected path, not an exceptional one:
+
+```python
+def create_payment(key: str, amount: int, currency: str) -> Payment:
+    try:
+        with transaction.atomic():
+            return Payment.objects.create(
+                idempotency_key=key, amount=amount, currency=currency
+            )
+    except IntegrityError:
+        # Another attempt at the same intent won the race.
+        return Payment.objects.get(idempotency_key=key)
+```
+
+Writing and handling the conflict is more correct than reading and then writing,
+because the decision happens at a point where the database guarantees atomicity.
+
+## Same key, different payload
+
+One case remains: the same key arrives with a different body. That is not a
+retry — it is a client bug, and swallowing it hides a defect.
+
+Storing a hash of the payload alongside the key makes it detectable:
+
+```python
+if existing.request_hash != hash_payload(payload):
+    raise IdempotencyKeyReused(key)
+```
+
+The right response is `422`, signalling that the key already belongs to a
+different intent.
+
+## Webhooks are the same problem
+
+An endpoint receiving webhooks has exactly this shape. The provider redelivers
+until it gets an acknowledgement, and the event identifier already is the
+idempotency key:
+
+```python
+def handle_event(event_id: str, payload: dict) -> None:
+    try:
+        with transaction.atomic():
+            ProcessedEvent.objects.create(event_id=event_id)
+    except IntegrityError:
+        return  # Already processed; redelivery expected.
+
+    apply_event(payload)
+```
+
+Recording the event **inside** the same transaction that processes it is what
+stops a mid-flight failure from leaving the event marked as processed without its
+effects having happened.
+
+## The principle
+
+Idempotency is not a layer you add afterwards — it is a property of the data
+model. It rests on a unique constraint over a client-supplied identifier,
+enforced by the database.
+
+If the guarantee depends on an `if` in application code, it does not exist yet.

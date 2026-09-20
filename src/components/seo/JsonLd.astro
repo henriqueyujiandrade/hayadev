@@ -1,0 +1,15 @@
+---
+interface Props {
+  /** A pre-serialized `@graph` document, produced by `@utils/structured-data`. */
+  json: string;
+}
+
+const { json } = Astro.props;
+---
+
+{/*
+  `set:html` is correct here: the payload is JSON that we serialized ourselves
+  from typed builders, never author-supplied markup. `</` is escaped so a string
+  value can never terminate the script element early.
+*/}
+<script type="application/ld+json" is:inline set:html={json.replace(/</g, '\\u003c')}></script>

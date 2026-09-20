@@ -1,0 +1,163 @@
+---
+import ArticleCard from '@components/articles/ArticleCard.astro';
+import ExperienceTimeline from '@components/profile/ExperienceTimeline.astro';
+import Hero from '@components/profile/Hero.astro';
+import StackGrid from '@components/profile/StackGrid.astro';
+import ProjectCard from '@components/projects/ProjectCard.astro';
+import { projectGridClass } from '@components/projects/grid';
+import ButtonLink from '@components/ui/ButtonLink.astro';
+import Container from '@components/ui/Container.astro';
+import Section from '@components/ui/Section.astro';
+import { type Locale } from '@config/locales';
+import { jobTitle, person, summary } from '@config/person';
+import { getSocialLinks } from '@config/social';
+import BaseLayout from '@layouts/BaseLayout.astro';
+import { useTranslations } from '@i18n/index';
+import {
+  assertRelationshipsResolve,
+  getArticles,
+  getFeaturedProjects,
+  getLabProjects,
+} from '@utils/content';
+import { buildAlternates, defaultOgImage, formatTitle, pathsForAllLocales } from '@utils/seo';
+import { homePath, localizedPath } from '@utils/routes';
+import { graph, personSchema, websiteSchema } from '@utils/structured-data';
+import { absoluteUrl } from '@utils/url';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const t = useTranslations(locale);
+
+/* Fails the build if any content relationship points at something missing. */
+await assertRelationshipsResolve();
+
+const [projects, articles, labProjects] = await Promise.all([
+  getFeaturedProjects(locale, 3),
+  getArticles(locale),
+  getLabProjects(locale),
+]);
+
+const latestArticles = articles.slice(0, 3);
+const labPreview = labProjects.slice(0, 2);
+
+const alternatePaths = pathsForAllLocales(homePath);
+const { alternates, xDefault } = buildAlternates(alternatePaths);
+
+const seo = {
+  title: formatTitle(`${person.fullName || person.name} — ${jobTitle[locale]}`),
+  description: summary[locale],
+  canonical: absoluteUrl(homePath(locale)),
+  alternates,
+  xDefault,
+  ogType: 'website' as const,
+  ogImage: defaultOgImage(),
+  ogImageAlt: `${person.fullName || person.name} — ${jobTitle[locale]}`,
+  noindex: false,
+};
+
+const jsonLd = graph([personSchema(locale), websiteSchema(locale)]);
+
+/* The contact block only exists if there is a real channel to offer. */
+const contactLinks = [
+  ...(person.email ? [{ href: `mailto:${person.email}`, label: person.email, primary: true }] : []),
+  ...getSocialLinks().map((link) => ({ href: link.url, label: link.label, primary: false })),
+];
+---
+
+<BaseLayout locale={locale} seo={seo} jsonLd={jsonLd} alternatePaths={alternatePaths}>
+  <Hero locale={locale} />
+
+  {projects.length > 0 && (
+    <Section
+      id="projects"
+      eyebrow={t.nav.projects}
+      title={t.home.selectedProjectsTitle}
+      lead={t.home.selectedProjectsLead}
+      link={{ href: localizedPath('projects', locale), label: t.home.allProjects }}
+    >
+      <div class={projectGridClass(projects.length)}>
+        {projects.map((project) => (
+          <ProjectCard project={project} locale={locale} />
+        ))}
+      </div>
+    </Section>
+  )}
+
+  <Section
+    id="experience"
+    eyebrow={t.nav.about}
+    title={t.home.experienceTitle}
+    lead={t.home.experienceLead}
+    link={{ href: localizedPath('about', locale), label: t.home.ctaAbout }}
+    class="border-t border-border"
+  >
+    <ExperienceTimeline locale={locale} detail="compact" />
+  </Section>
+
+  <Section
+    id="stack"
+    eyebrow="Stack"
+    title={t.home.stackTitle}
+    lead={t.home.stackLead}
+    class="border-t border-border"
+  >
+    <StackGrid locale={locale} />
+  </Section>
+
+  {latestArticles.length > 0 && (
+    <Section
+      id="articles"
+      eyebrow={t.nav.articles}
+      title={t.home.latestArticlesTitle}
+      lead={t.home.latestArticlesLead}
+      link={{ href: localizedPath('articles', locale), label: t.home.allArticles }}
+      class="border-t border-border"
+    >
+      <div class="flex flex-col">
+        {latestArticles.map((article) => (
+          <ArticleCard article={article} locale={locale} />
+        ))}
+      </div>
+    </Section>
+  )}
+
+  {labPreview.length > 0 && (
+    <Section
+      id="lab"
+      eyebrow="Lab"
+      title={t.home.labTitle}
+      lead={t.home.labLead}
+      link={{ href: localizedPath('lab', locale), label: t.home.allExperiments }}
+      class="border-t border-border"
+    >
+      <div class={projectGridClass(labPreview.length)}>
+        {labPreview.map((project) => (
+          <ProjectCard project={project} locale={locale} />
+        ))}
+      </div>
+    </Section>
+  )}
+
+  {contactLinks.length > 0 && (
+    <section aria-labelledby="contact-heading" class="border-t border-border py-section">
+      <Container>
+        <div class="flex max-w-measure flex-col gap-4">
+          <h2 id="contact-heading" class="font-serif text-h2 text-ink">
+            {t.home.contactTitle}
+          </h2>
+          <p class="text-ink-muted">{t.home.contactLead}</p>
+          <div class="mt-2 flex flex-wrap gap-3">
+            {contactLinks.map((link) => (
+              <ButtonLink href={link.href} variant={link.primary ? 'primary' : 'secondary'}>
+                {link.label}
+              </ButtonLink>
+            ))}
+          </div>
+        </div>
+      </Container>
+    </section>
+  )}
+</BaseLayout>

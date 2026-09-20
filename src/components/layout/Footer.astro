@@ -1,0 +1,48 @@
+---
+import Brand from '@components/navigation/Brand.astro';
+import MainNav from '@components/navigation/MainNav.astro';
+import SocialLinks from '@components/navigation/SocialLinks.astro';
+import Container from '@components/ui/Container.astro';
+import type { Locale } from '@config/locales';
+import { person } from '@config/person';
+import { interpolate, useTranslations } from '@i18n/index';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const t = useTranslations(locale);
+
+const year = new Date().getUTCFullYear();
+const location = `${person.location.city}, ${person.location.country}`;
+---
+
+<footer class="mt-24 border-t border-border bg-surface-muted/40">
+  <Container class="flex flex-col gap-10 py-12">
+    <div class="flex flex-col gap-8 sm:flex-row sm:items-start sm:justify-between">
+      <div class="flex flex-col gap-3">
+        <Brand locale={locale} />
+        <p class="text-sm text-ink-muted">
+          {person.name} — {location}
+        </p>
+      </div>
+
+      <nav aria-label={t.footer.navigationLabel} class="-ms-3 sm:ms-0">
+        <MainNav locale={locale} layout="stack" />
+      </nav>
+    </div>
+
+    <div class="flex flex-col-reverse gap-4 border-t border-border pt-6 sm:flex-row sm:items-center sm:justify-between">
+      <div class="flex flex-col gap-1">
+        <p class="text-sm text-ink-muted">{interpolate(t.footer.copyright, { year })}</p>
+        <p class="text-[0.8125rem] text-ink-subtle">{t.footer.builtWith}</p>
+      </div>
+
+      <div class="-ms-2 flex items-center sm:ms-0">
+        <h2 class="sr-only">{t.footer.socialLabel}</h2>
+        <SocialLinks locale={locale} includeFeed includeEmail />
+      </div>
+    </div>
+  </Container>
+</footer>

@@ -1,0 +1,194 @@
+---
+title: KeepGames API
+description: API multi-tenant de una plataforma SaaS de juegos terapéuticos con biofeedback, en NestJS y PostgreSQL, del modelo de datos al cobro. Desarrollada en Self.
+shortDescription: API multi-tenant de juegos terapéuticos con biofeedback, en NestJS y PostgreSQL.
+projectType: api
+status: active
+role: Desarrollo de la API y del modelo de datos
+technologies:
+  - TypeScript
+  - NestJS
+  - PostgreSQL
+  - TypeORM
+  - AWS Lambda
+  - Stripe
+year: 2026
+featured: false
+confidential: true
+caseStudy: true
+order: 7
+---
+
+La **KeepGames API** es el backend de una plataforma SaaS de juegos terapéuticos con
+biofeedback, usada por clínicas, profesionales independientes y familias. Crea las
+sesiones de juego, recibe la telemetría de cada partida — incluida la señal bruta de
+frecuencia cardíaca —, gestiona pacientes, equipos, formularios y suscripciones, y es
+consumida por el portal y por los juegos. Sustituye a un sistema heredado y fue
+desarrollada en Self, del modelo de datos a la publicación.
+
+La base — la organización como tenant, permisos en código, migraciones como única
+forma de cambiar el esquema — es la misma descrita en el proyecto Skinner y no se
+repite aquí. Lo que sigue es lo específico de esta API.
+
+## Los juegos son clientes en los que no se confía
+
+Los juegos corren embebidos en el portal y nunca deben tener las credenciales del
+usuario. Por eso la app crea una **sesión de juego**, y el servidor genera una clave
+efímera vinculada a un paciente, a un juego y a quien lo aplica. La clave se guarda
+**solo como hash** y se muestra **una única vez**: el juego la canjea por el contexto
+de la sesión y la usa para enviar la telemetría. Los dos públicos — la app,
+autenticada con el token del usuario, y el juego, autenticado con la clave — quedan
+en **zonas de confianza separadas**, con guards distintos y nunca en el mismo
+controller.
+
+La otra mitad de la regla: **nada que identifique el alcance viene del juego.**
+Organización, paciente, aplicador, juego y plataforma se leen siempre de la sesión, y
+los cuerpos de las solicitudes ni siquiera tienen campos para eso, porque la
+validación estricta rechaza lo desconocido. Un juego solo puede leer y escribir lo
+que pertenece a la sesión en la que está.
+
+Una decisión tomada a propósito: la suscripción se comprueba cuando se crea la
+sesión, y no en cada mensaje. Una sesión válida no se interrumpe a mitad si la
+organización pasa a solo lectura, porque cortar la partida de un niño sería peor que
+esa holgura.
+
+## Un modelo de datos para telemetría clínica
+
+Cada partida se vuelve un **hecho inmutable**, y el diseño gira en torno a eso:
+
+- **Copias que no divergen.** La partida guarda copias de la organización, del
+  paciente, del juego y del aplicador, escritas por el servidor a partir de la
+  sesión. Desnormalizar suele costar divergencia, pero aquí la fila nunca cambia, así
+  que las copias no tienen cómo alejarse del origen. Consultar la evolución de un
+  paciente entre juegos y sesiones se vuelve una lectura de una sola tabla, sin join.
+- **La señal bruta vive aparte.** Está en una tabla propia, 1:1 con la partida, que
+  solo existe cuando hubo sensor — y es la mayor del sistema. Las estadísticas corren
+  sobre los números resumen de la tabla de hechos, sin recorrer nunca el JSON, y los
+  listados nunca cargan la señal.
+- **Un hecho, no un puntero.** La partida registra _quién la aplicó_. Copiar quién es
+  el responsable del paciente congelaría una foto que envejece, porque el responsable
+  cambia, y sigue siendo alcanzable a través del paciente.
+- **Numeración y atomicidad.** El número de la partida lo asigna el servidor, nunca se
+  acepta del cliente, y la partida y la señal se escriben en una sola transacción.
+- **Un par de tablas para todos los juegos.** El sistema anterior creaba una tabla por
+  juego. Aquí, lo común es una columna tipada, y lo específico de cada juego queda en
+  JSON.
+- **Nada se borra.** Las partidas, las mediciones de variabilidad cardíaca y las
+  respuestas de formulario no tienen ruta de eliminación: son registro clínico.
+
+## Tipado donde el vocabulario es cerrado, libre donde es abierto
+
+El perfil de accesibilidad de un paciente es un conjunto pequeño y estable, así que
+usa **columnas tipadas**, y agregar un campo exige una migración, un costo
+intencional. En cambio, la configuración de cada juego es **JSON libre**, porque cada
+juego es dueño de sus campos, con pocas barreras: tamaño, profundidad y claves
+reservadas de JavaScript rechazadas. Las dos viven en tablas separadas, para que un
+juego que escriba basura en su propio JSON nunca corrompa el perfil validado.
+
+- **La clave es una tupla completa**, sin columna anulable: profesional, paciente,
+  juego y plataforma. Además de decir exactamente lo que carga la sesión, esto evita
+  la trampa de PostgreSQL en que los NULL son distintos en un índice único y la misma
+  fila lógica puede entrar dos veces.
+- **Leer nunca escribe.** La fila solo existe después de la primera escritura. Sin
+  ella, la API devuelve un perfil por defecto que vive en código, y una prueba ata esa
+  constante a los valores por defecto de las columnas, para que las dos no diverjan.
+- **La configuración de un juego solo se escribe desde dentro del juego.** No existe
+  ruta de la app para eso, así que «la app borró la configuración de todos los
+  juegos» es imposible por construcción. Se devuelve separada del perfil de
+  accesibilidad, sin mezclar, y quien aplica la precedencia es el cliente.
+
+## Formularios versionados
+
+Los formularios de la plataforma se arman en un editor y se responden dentro del
+sistema, y el modelo gira en torno a una invariante: **una versión publicada es
+inmutable.**
+
+- Un borrador se edita libremente. Publicar archiva la versión anterior **primero**,
+  en la misma transacción, para que el índice único parcial — como máximo una versión
+  publicada por formulario — nunca vea dos. Cambiar una pregunta es clonar en un nuevo
+  borrador.
+- Cada respuesta apunta a **la versión exacta que se mostró**. Las preguntas tienen un
+  código estable entre versiones, así que clonar es copiar filas, sin remapear ids, y
+  el análisis entre versiones se vuelve una agrupación por código. Las respuestas de
+  opción múltiple guardan el valor estable de la opción, y no la etiqueta, para poder
+  reescribir el texto sin romper la serie histórica.
+- **El cliente dibuja, pero nunca decide qué es válido.** La visualización condicional
+  es una regla en JSON que el cliente evalúa para renderizar y que el servidor
+  reevalúa al recibir: las respuestas a preguntas ocultas se **descartan**, y no se
+  rechazan, porque una regla pudo haber ocultado la pregunta después de que la
+  persona ya hubiera escrito en ella. Como cada regla solo puede citar preguntas
+  anteriores, una pasada lo resuelve todo, sin iterar hasta un punto fijo, y el
+  validador es una función pura, sin base de datos.
+- El **ciclo semanal** de formularios deriva su propio tamaño, exige semanas
+  contiguas para publicarse y tiene la fecha de inicio como dato, modificable sin
+  deploy. El registro de entregas es solo de inserción, sin índice único a propósito,
+  y lectura y escritura son rutas separadas.
+
+## Cobro: el gateway es la verdad, la API decide el acceso
+
+La suscripción local es un espejo del gateway de pago, y algunas decisiones
+garantizan que nunca conceda acceso por error:
+
+```ts
+const DAY = 86_400_000;
+type Period = { endsAt: Date; graceDays: number };
+
+// El estado crudo del gateway es solo auditoría: aquí se decide el acceso.
+function accessFor(raw: string, period: Period, now = new Date()) {
+  switch (raw) {
+    case 'trialing':
+    case 'active':
+      return 'full';
+    case 'past_due': {
+      // la gracia se calcula al leer, sin planificador
+      const graceEnds = period.endsAt.getTime() + period.graceDays * DAY;
+      return now.getTime() <= graceEnds ? 'full' : 'read_only';
+    }
+    default: // cancelada, impaga o desconocida: nunca abre acceso
+      return 'read_only';
+  }
+}
+```
+
+- **El estado crudo es auditoría.** Se guarda tal como llegó, pero ningún otro punto
+  del código decide en base a él: un único mapa lo traduce al estado interno, y un
+  estado desconocido cae en solo lectura, nunca en acceso.
+- **El plan sale del precio de la suscripción, no del metadata.** El metadata es una
+  foto del checkout: cuando el cliente cambia de plan por el portal, el precio cambia
+  y el metadata no, y los límites quedarían mal.
+- **Un solo camino de escritura.** Los eventos del gateway, las concesiones manuales y
+  la reconciliación manual pasan por el mismo upsert atómico e idempotente, así que
+  una concesión manual no abre ningún camino de acceso especial. La revocación solo
+  vale para concesiones manuales: revocar una suscripción que el gateway sigue
+  cobrando generaría un cliente que paga y no tiene acceso.
+- **El índice único, a propósito, no es parcial.** Existe como máximo una fila por
+  organización, para siempre, y el upsert siempre deshace la eliminación lógica:
+  escribir la fila es también «desrevocarla». Sin eso, el `ON CONFLICT DO UPDATE`
+  actualizaría todo y dejaría la fila eliminada, con la organización atrapada en solo
+  lectura incluso después de pagar.
+- **El cambio de plan se valida aquí**, porque el portal alojado no sabe si el plan de
+  destino sirve al tipo de la organización ni si el uso actual cabe en él. La lista
+  de planes intercambiables del portal se genera a partir del catálogo propio, y la
+  generación rechaza una lista vacía, que desactivaría todo cambio.
+- **La reconciliación falla en voz alta.** Al traer la suscripción directo del
+  gateway, dos suscripciones vivas para la misma organización se vuelven un conflicto
+  mostrado a una persona, y no una elección silenciosa. El resultado de la búsqueda
+  se recomprueba además contra la organización, porque la búsqueda del gateway es
+  eventualmente consistente.
+
+## Calidad y operación
+
+Son 18 módulos, 33 migraciones y 999 pruebas unitarias en 52 archivos, con las
+dependencias simuladas y sin base de datos, más 20 archivos e2e que levantan la
+aplicación de verdad contra un PostgreSQL local. Los entornos, las migraciones y la
+publicación siguen las reglas del Skinner: el esquema solo cambia por migración,
+nunca por `synchronize`, y la API corre en AWS Lambda.
+
+## Qué demuestra este proyecto
+
+Desde el punto de vista de la ingeniería, el interés aquí es el modelo: dónde vive la
+verdad — hechos inmutables, con copias seguras porque no cambian —, quién puede decir
+qué — el cliente nunca informa el alcance — y qué hacer cuando un sistema externo
+discrepa del propio: fallar en voz alta, y nunca elegir en silencio.
+
+El proyecto sigue en desarrollo.

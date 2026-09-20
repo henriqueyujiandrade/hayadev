@@ -1,0 +1,192 @@
+---
+title: KeepGames API
+description: Multi-tenant API of a SaaS platform for therapeutic biofeedback games, built with NestJS and PostgreSQL, from the data model to billing. Built at Self.
+shortDescription: Multi-tenant API for therapeutic biofeedback games, in NestJS and PostgreSQL.
+projectType: api
+status: active
+role: Development of the API and the data model
+technologies:
+  - TypeScript
+  - NestJS
+  - PostgreSQL
+  - TypeORM
+  - AWS Lambda
+  - Stripe
+year: 2026
+featured: false
+confidential: true
+caseStudy: true
+order: 7
+---
+
+The **KeepGames API** is the backend of a SaaS platform for therapeutic biofeedback
+games, used by clinics, independent professionals and families. It creates the game
+sessions, receives the telemetry of each match — including the raw heart-rate
+signal —, manages patients, teams, forms and subscriptions, and is consumed by the
+portal and by the games. It replaces a legacy system and was built at Self, from the
+data model to deployment.
+
+The foundation — the organization as the tenant, permissions in code, migrations as
+the only way to change the schema — is the same one described in the Skinner project
+and is not repeated here. What follows is what is specific to this API.
+
+## Games are clients you do not trust
+
+Games run embedded in the portal and must never hold the user's credentials. So the
+app creates a **game session**, and the server generates an ephemeral key tied to a
+patient, a game and whoever is running it. The key is stored **only as a hash** and
+shown **exactly once**: the game exchanges it for the session context and uses it to
+send telemetry. The two audiences — the app, authenticated with the user's token,
+and the game, authenticated with the key — live in **separate trust zones**, with
+different guards and never in the same controller.
+
+The other half of the rule: **nothing that identifies scope comes from the game.**
+Organization, patient, applicator, game and platform are always read from the
+session, and request bodies do not even have fields for them, because strict
+validation rejects anything unknown. A game can only read and write what belongs to
+the session it is in.
+
+One deliberate decision: the subscription is checked when the session is created,
+not on every message. A valid session is not interrupted midway if the organization
+drops to read-only, because cutting off a child's match would be worse than that
+slack.
+
+## A data model for clinical telemetry
+
+Each match becomes an **immutable fact**, and the design revolves around that:
+
+- **Copies that do not drift.** The match stores copies of the organization, the
+  patient, the game and the applicator, written by the server from the session.
+  Denormalizing usually costs drift, but here the row never changes, so the copies
+  have no way to move away from the source. Querying a patient's progress across
+  games and sessions becomes a read from a single table, with no join.
+- **The raw signal lives elsewhere.** It sits in its own table, 1:1 with the match,
+  which only exists when a sensor was used — and it is the largest in the system.
+  Statistics run on the summary numbers in the fact table, never scanning the JSON,
+  and listings never load the signal.
+- **A fact, not a pointer.** The match records _who applied it_. Copying who is
+  responsible for the patient would freeze a snapshot that goes stale, because the
+  person responsible changes, and they remain reachable through the patient.
+- **Numbering and atomicity.** The match number is assigned by the server, never
+  accepted from the client, and the match and its signal are written in a single
+  transaction.
+- **One pair of tables for every game.** The previous system created a table per
+  game. Here, what is common is a typed column, and what is specific to each game
+  lives in JSON.
+- **Nothing is deleted.** Matches, heart-rate-variability measurements and form
+  responses have no delete route: they are clinical records.
+
+## Typed where the vocabulary is closed, free where it is open
+
+A patient's accessibility profile is a small, stable set, so it uses **typed
+columns**, and adding a field requires a migration, an intentional cost. A game's
+configuration, on the other hand, is **free-form JSON**, because each game owns its
+own fields, with few guardrails: size, depth and rejected reserved JavaScript keys.
+The two live in separate tables, so a game that writes junk into its own JSON can
+never corrupt the validated profile.
+
+- **The key is a complete tuple**, with no nullable column: professional, patient,
+  game and platform. Besides saying exactly what the session carries, this avoids
+  the PostgreSQL trap where NULLs are distinct in a unique index and the same
+  logical row can be inserted twice.
+- **Reading never writes.** The row only exists after the first write. Without it,
+  the API returns a default profile that lives in code, and a test ties that
+  constant to the column defaults, so the two cannot diverge.
+- **A game's configuration is only written from inside the game.** There is no app
+  route for it, so "the app wiped every game's configuration" is impossible by
+  construction. It is returned separately from the accessibility profile, without
+  merging, and the client applies precedence.
+
+## Versioned forms
+
+The platform's forms are built in an editor and answered inside the system, and the
+model revolves around one invariant: **a published version is immutable.**
+
+- A draft is freely editable. Publishing archives the previous version **first**, in
+  the same transaction, so the partial unique index — at most one published version
+  per form — never sees two. Changing a question means cloning into a new draft.
+- Each answer points to **the exact version that was shown**. Questions have a code
+  that is stable across versions, so cloning is copying rows, with no id remapping,
+  and cross-version analysis becomes a group by code. Multiple-choice answers store
+  the option's stable value, not its label, so the text can be reworded without
+  breaking the historical series.
+- **The client draws, but never decides what is valid.** Conditional display is a
+  JSON rule that the client evaluates to render and the server re-evaluates on
+  receipt: answers to hidden questions are **dropped**, not rejected, because a rule
+  may have hidden the question after the person had already typed into it. Since
+  each rule can only cite earlier questions, a single pass resolves everything, with
+  no iteration to a fixed point, and the validator is a pure function with no
+  database.
+- The **weekly form cycle** derives its own length, requires contiguous weeks to be
+  published, and has its start date as data, changeable without a deploy. The
+  delivery log is insert-only, with no unique index on purpose, and reads and writes
+  are separate routes.
+
+## Billing: the gateway is the truth, the API decides access
+
+The local subscription is a mirror of the payment gateway, and a few decisions
+guarantee it never grants access by mistake:
+
+```ts
+const DAY = 86_400_000;
+type Period = { endsAt: Date; graceDays: number };
+
+// The gateway's raw status is audit-only: access is decided in this map.
+function accessFor(raw: string, period: Period, now = new Date()) {
+  switch (raw) {
+    case 'trialing':
+    case 'active':
+      return 'full';
+    case 'past_due': {
+      // the grace period is computed at read time, no scheduler
+      const graceEnds = period.endsAt.getTime() + period.graceDays * DAY;
+      return now.getTime() <= graceEnds ? 'full' : 'read_only';
+    }
+    default: // canceled, unpaid or unknown: never opens access
+      return 'read_only';
+  }
+}
+```
+
+- **The raw status is audit.** It is stored as it came, but no other point in the
+  code decides based on it: a single map translates it into the internal state, and
+  an unknown status falls into read-only, never into access.
+- **The plan comes from the subscription's price, not from the metadata.** Metadata
+  is a snapshot of the checkout: when the customer changes plan through the portal,
+  the price changes and the metadata does not, and the limits would be wrong.
+- **A single write path.** Gateway events, manual grants and manual reconciliation
+  go through the same atomic, idempotent upsert, so a manual grant opens no special
+  access path. Revocation only applies to manual grants: revoking a subscription
+  that the gateway keeps charging would create a customer who pays and has no
+  access.
+- **The unique index is deliberately not partial.** There is at most one row per
+  organization, forever, and the upsert always undoes the soft delete: writing the
+  row is also "un-revoking" it. Without that, `ON CONFLICT DO UPDATE` would update
+  everything and leave the row deleted, with the organization stuck in read-only
+  even after paying.
+- **Plan changes are validated here**, because the hosted portal does not know
+  whether the target plan fits the organization's type or whether current usage fits
+  within it. The portal's list of switchable plans is generated from our own
+  catalog, and the generation refuses an empty list, which would disable every
+  switch.
+- **Reconciliation fails loudly.** When pulling the subscription straight from the
+  gateway, two live subscriptions for the same organization become a conflict shown
+  to a person, not a silent choice. The search result is also re-checked against the
+  organization, because the gateway's search is eventually consistent.
+
+## Quality and operations
+
+There are 18 modules, 33 migrations and 999 unit tests in 52 files, with mocked
+dependencies and no database, plus 20 e2e files that boot the real application
+against a local PostgreSQL. Environments, migrations and deployment follow the
+Skinner's rules: the schema only changes through migrations, never `synchronize`,
+and the API runs on AWS Lambda.
+
+## What this project demonstrates
+
+From an engineering standpoint, the interest here is the model: where the truth
+lives — immutable facts, with copies that are safe because they do not change —, who
+can say what — the client never states scope — and what to do when an external
+system disagrees with yours: fail loudly, and never choose silently.
+
+The project is still in development.

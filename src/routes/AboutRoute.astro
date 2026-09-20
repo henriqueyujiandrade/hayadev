@@ -1,0 +1,188 @@
+---
+import ExperienceTimeline from '@components/profile/ExperienceTimeline.astro';
+import StackGrid from '@components/profile/StackGrid.astro';
+import ButtonLink from '@components/ui/ButtonLink.astro';
+import Container from '@components/ui/Container.astro';
+import type { Locale } from '@config/locales';
+import { languages } from '@config/experience';
+import { person } from '@config/person';
+import { getSocialLinks } from '@config/social';
+import PageLayout from '@layouts/PageLayout.astro';
+import { useTranslations } from '@i18n/index';
+import { homePath, localizedPath } from '@utils/routes';
+import { buildAlternates, defaultOgImage, formatTitle, pathsForAllLocales } from '@utils/seo';
+import { breadcrumbSchema, graph, personSchema, type BreadcrumbItem } from '@utils/structured-data';
+import { absoluteUrl } from '@utils/url';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const t = useTranslations(locale);
+
+const path = localizedPath('about', locale);
+const alternatePaths = pathsForAllLocales((target) => localizedPath('about', target));
+const { alternates, xDefault } = buildAlternates(alternatePaths);
+
+const seo = {
+  title: formatTitle(t.about.title),
+  description: t.about.metaDescription,
+  canonical: absoluteUrl(path),
+  alternates,
+  xDefault,
+  ogType: 'website' as const,
+  ogImage: defaultOgImage(),
+  ogImageAlt: `${person.name} — ${t.about.title}`,
+  noindex: false,
+};
+
+const breadcrumbs: BreadcrumbItem[] = [
+  { name: t.nav.home, path: homePath(locale) },
+  { name: t.about.title, path },
+];
+
+const jsonLd = graph([personSchema(locale), breadcrumbSchema(breadcrumbs)]);
+
+/*
+ * How I work. These are statements about method, not claims about outcomes —
+ * the site does not assert results it cannot show.
+ */
+const approach: Record<Locale, readonly string[]> = {
+  'pt-BR': [
+    'Modelar o domínio antes de escrever endpoints. A maior parte dos problemas de uma API é, na verdade, um problema de modelagem.',
+    'Manter regras de negócio fora da camada HTTP, para que possam ser testadas e reutilizadas a partir de qualquer ponto de entrada.',
+    'Preferir restrições no banco de dados a verificações na aplicação quando a garantia precisa ser real.',
+    'Escrever código que a próxima pessoa consiga ler — incluindo eu mesmo, seis meses depois.',
+  ],
+  en: [
+    'Model the domain before writing endpoints. Most API problems turn out to be modelling problems.',
+    'Keep business rules out of the HTTP layer, so they can be tested and reused from any entry point.',
+    'Prefer database constraints over application checks when the guarantee has to be real.',
+    'Write code the next person can read — including me, six months later.',
+  ],
+  es: [
+    'Modelar el dominio antes de escribir endpoints. La mayoría de los problemas de una API son, en realidad, problemas de modelado.',
+    'Mantener las reglas de negocio fuera de la capa HTTP, para que puedan probarse y reutilizarse desde cualquier punto de entrada.',
+    'Preferir restricciones en la base de datos antes que comprobaciones en la aplicación cuando la garantía tiene que ser real.',
+    'Escribir código que la siguiente persona pueda leer, incluido yo mismo seis meses después.',
+  ],
+};
+
+const interests: Record<Locale, readonly string[]> = {
+  'pt-BR': [
+    'Arquitetura de sistemas multi-organização',
+    'Regras de negócio complexas e modelagem de domínio',
+    'Integrações, webhooks e sistemas distribuídos',
+    'Performance de consultas em PostgreSQL',
+    'Jogos 2D e renderização em Canvas',
+  ],
+  en: [
+    'Multi-organization system architecture',
+    'Complex business rules and domain modelling',
+    'Integrations, webhooks and distributed systems',
+    'PostgreSQL query performance',
+    '2D games and Canvas rendering',
+  ],
+  es: [
+    'Arquitectura de sistemas multiorganización',
+    'Reglas de negocio complejas y modelado de dominio',
+    'Integraciones, webhooks y sistemas distribuidos',
+    'Rendimiento de consultas en PostgreSQL',
+    'Juegos 2D y renderizado en Canvas',
+  ],
+};
+
+const contactLinks = [
+  ...(person.email ? [{ href: `mailto:${person.email}`, label: person.email, primary: true }] : []),
+  ...getSocialLinks().map((link) => ({ href: link.url, label: link.label, primary: false })),
+];
+---
+
+<PageLayout
+  locale={locale}
+  seo={seo}
+  jsonLd={jsonLd}
+  alternatePaths={alternatePaths}
+  title={t.about.title}
+  lead={t.about.lead}
+  eyebrow={t.nav.about}
+  breadcrumbs={breadcrumbs}
+>
+  <Container class="pt-12 pb-section">
+    <div class="flex flex-col gap-16">
+      <section aria-labelledby="approach-heading" class="flex flex-col gap-6">
+        <h2 id="approach-heading" class="font-serif text-h2 text-ink">
+          {t.about.approachTitle}
+        </h2>
+        <ul class="flex max-w-measure flex-col gap-3">
+          {approach[locale].map((item) => (
+            <li class="relative ps-5 text-ink-muted before:absolute before:start-0 before:top-[0.72em] before:h-px before:w-3 before:bg-accent-line">
+              {item}
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section aria-labelledby="about-experience-heading" class="flex flex-col gap-6">
+        <h2 id="about-experience-heading" class="font-serif text-h2 text-ink">
+          {t.about.experienceTitle}
+        </h2>
+        <ExperienceTimeline locale={locale} detail="full" />
+      </section>
+
+      <section aria-labelledby="about-stack-heading" class="flex flex-col gap-8">
+        <h2 id="about-stack-heading" class="font-serif text-h2 text-ink">
+          {t.about.stackTitle}
+        </h2>
+        <StackGrid locale={locale} />
+      </section>
+
+      <div class="grid gap-16 sm:grid-cols-2">
+        <section aria-labelledby="interests-heading" class="flex flex-col gap-6">
+          <h2 id="interests-heading" class="font-serif text-h2 text-ink">
+            {t.about.interestsTitle}
+          </h2>
+          <ul class="flex flex-col gap-2.5">
+            {interests[locale].map((item) => (
+              <li class="text-ink-muted">{item}</li>
+            ))}
+          </ul>
+        </section>
+
+        <section aria-labelledby="languages-heading" class="flex flex-col gap-6">
+          <h2 id="languages-heading" class="font-serif text-h2 text-ink">
+            {t.about.languagesTitle}
+          </h2>
+          <dl class="flex flex-col gap-2.5">
+            {languages.map((language) => (
+              <div class="flex items-baseline gap-2">
+                <dt class="text-ink">{language.name[locale]}</dt>
+                <dd class="font-mono text-[0.8125rem] text-ink-subtle">{language.level[locale]}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      </div>
+
+      {contactLinks.length > 0 && (
+        <section
+          aria-labelledby="about-contact-heading"
+          class="flex max-w-measure flex-col gap-4 border-t border-border pt-12"
+        >
+          <h2 id="about-contact-heading" class="font-serif text-h2 text-ink">
+            {t.about.contactTitle}
+          </h2>
+          <p class="text-ink-muted">{t.about.contactLead}</p>
+          <div class="mt-2 flex flex-wrap gap-3">
+            {contactLinks.map((link) => (
+              <ButtonLink href={link.href} variant={link.primary ? 'primary' : 'secondary'}>
+                {link.label}
+              </ButtonLink>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  </Container>
+</PageLayout>

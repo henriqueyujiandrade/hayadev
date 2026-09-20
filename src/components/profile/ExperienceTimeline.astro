@@ -1,0 +1,84 @@
+---
+import type { Locale } from '@config/locales';
+import { experience } from '@config/experience';
+import { useTranslations } from '@i18n/index';
+import { formatMonthYear } from '@utils/date';
+import { relForUrl } from '@utils/url';
+import Tag from '@components/ui/Tag.astro';
+
+interface Props {
+  locale: Locale;
+  /** `full` adds the bullet highlights; `compact` is the home page summary. */
+  detail?: 'full' | 'compact';
+}
+
+const { locale, detail = 'compact' } = Astro.props;
+const t = useTranslations(locale);
+
+const entries = experience.map((entry) => ({
+  ...entry,
+  period: `${formatMonthYear(entry.start, locale)} — ${
+    entry.end ? formatMonthYear(entry.end, locale) : t.about.present
+  }`,
+}));
+---
+
+<ol class="flex flex-col">
+  {entries.map((entry, index) => (
+    <li
+      class:list={[
+        'grid gap-x-8 gap-y-3 py-8 sm:grid-cols-[minmax(0,13rem)_1fr]',
+        index > 0 && 'border-t border-border',
+      ]}
+    >
+      <div class="flex flex-col gap-1">
+        <p class="font-mono text-[0.75rem] tracking-wide text-ink-subtle">{entry.period}</p>
+        {entry.remote && (
+          <p class="font-mono text-[0.75rem] tracking-wide text-ink-subtle">{t.about.remote}</p>
+        )}
+      </div>
+
+      <div class="flex flex-col gap-3">
+        <div class="flex flex-col gap-1">
+          <h3 class="text-h3 font-semibold text-ink">{entry.role[locale]}</h3>
+          <p class="text-[0.9375rem] text-ink-muted">
+            {entry.url ? (
+              <a
+                href={entry.url}
+                rel={relForUrl(entry.url)}
+                target="_blank"
+                class="underline decoration-border-strong underline-offset-4 transition-colors hover:text-ink"
+              >
+                {entry.organization}
+              </a>
+            ) : (
+              entry.organization
+            )}
+          </p>
+        </div>
+
+        <p class="max-w-measure text-ink-muted">{entry.summary[locale]}</p>
+
+        {detail === 'full' && (
+          <ul class="mt-1 flex max-w-measure flex-col gap-2">
+            {entry.highlights[locale].map((highlight) => (
+              <li class="relative ps-4 text-[0.9375rem] text-ink-muted before:absolute before:start-0 before:top-[0.7em] before:h-px before:w-2 before:bg-border-strong">
+                {highlight}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {detail === 'full' && (
+          <ul class="mt-2 flex flex-wrap gap-1.5">
+            {entry.technologies.map((technology) => (
+              <li>
+                <Tag>{technology}</Tag>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </li>
+  ))}
+</ol>

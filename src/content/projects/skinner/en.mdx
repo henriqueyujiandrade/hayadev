@@ -1,0 +1,222 @@
+---
+title: Skinner
+description: Multi-tenant SaaS platform for ABA clinics, with a NestJS API, a React web panel and a React Native session-execution app. Built at Self.
+shortDescription: Multi-tenant SaaS for ABA clinics, with an API, a web panel and a session app.
+projectType: saas
+status: active
+role: Full stack development of the API, web panel and app
+technologies:
+  - TypeScript
+  - NestJS
+  - PostgreSQL
+  - TypeORM
+  - AWS Lambda
+  - React
+  - React Native
+  - Expo
+  - TanStack Query
+  - Zod
+  - Stripe
+year: 2026
+featured: true
+confidential: true
+caseStudy: true
+order: 5
+relatedArticles:
+  - idempotencia-endpoints
+---
+
+Clinics that work with ABA (Applied Behavior Analysis) organize their care around
+**protocols**: sets of tasks that each patient practices over months, in short
+sessions where every attempt is recorded. Whoever coordinates designs the plan,
+schedules it and follows progress; whoever runs the session needs to open the day
+and see **only what they are going to do**.
+
+Skinner is the platform behind that workflow, built at Self. What follows are the
+technical decisions behind it.
+
+## A decision engine, not a CRUD
+
+The system's value lies in answering three questions on its own: **what does this
+patient need to practice today**, **what actually happened in the session**, and
+**what changes in the plan because of it**. That pushes the design away from data
+entry screens: there is a decision engine at the center, and registration,
+scheduling and reports orbit around it.
+
+Three applications make up the product:
+
+| Application        | Role                                                                | Stack                                                        |
+| ------------------ | ------------------------------------------------------------------- | ------------------------------------------------------------ |
+| API                | Domain, rules and the decision engine                               | NestJS 11, TypeORM, PostgreSQL, AWS Lambda                   |
+| Web panel          | Management: catalog, protocols, schedule, team, reports and billing | React 19, Vite, TanStack Router and Query, MUI, Tailwind     |
+| Session-runner app | Running the session, attempt by attempt                             | Expo and React Native: one codebase for web, iOS and Android |
+
+The three are separate repositories with no cross-imports. The contract between
+them is the API, and the rule is a single one: **clinical logic lives only on the
+server**. Clients record what happened and display what the server concluded;
+they never reimplement the decision.
+
+## A layered API with the tenant on the server
+
+The API is a modular monolith in NestJS with 24 modules, all sharing the same
+anatomy — controller, service, repository, entity — and DTOs at the boundary: an
+entity is never returned directly. Three decisions hold the isolation between
+clinics together:
+
+- **The organization is the tenant.** Business data belongs to an organization
+  and every query is scoped by it. A user can belong to several organizations, so
+  that relationship lives in a membership record, not on the user itself.
+- **Scope comes from the server, never from the client.** The organization and
+  the acting member come from the authenticated context or the route path, never
+  from a query parameter. A resource outside the caller's scope answers **404,
+  not 403**: its existence must not leak.
+- **Permissions live in code.** A permissions enum and a map per role; a member
+  can hold several roles and the effective permissions are their union. Since it
+  does not depend on the database, the rule is testable with plain objects.
+
+Authentication follows the same care. The access token is short-lived and lives
+only in client memory; the refresh token **rotates on every use, with reuse
+detection** — a token that was already consumed showing up again is read as a
+leak and takes down the whole lineage. The client type is stored on the token and
+becomes a transport binding: an `httpOnly` cookie on web, the response body and
+the operating system's secure storage on mobile. Getting the pair wrong is a 401.
+There is password and Google sign-in, e-mail verification, and acceptance of
+legal documents (LGPD) that **blocks access** while any is pending.
+
+## No cron, no queue, no worker
+
+The API runs on AWS Lambda, and that constraint became a design rule: **no
+background processes**. Every engine operation is synchronous, transactional and
+deterministic. If something seems to need a scheduler, it is a date computed at
+read time.
+
+One example: "overdue" is never a stored flag, it is a date comparison evaluated
+when someone asks. A stored flag would need a job to keep it current, and a job is
+exactly what the architecture does not have. Lateness stops being state to
+synchronize and becomes derived information.
+
+The schedule follows the same logic. It uses the calendar-app standard (RRULE,
+RFC 5545) instead of one column per weekday: a recurrence is a contract, and its
+occurrences are **virtual**, expanded on demand over a bounded window. They only
+become a row in the database when they deviate from the pattern — an absence, a
+reschedule, a change of practitioner. And the two engines are independent on
+purpose: the recurrence one does not know what ABA is, and the clinical one does
+not know what a calendar is.
+
+The decision logic — evaluating whether a criterion was met, selecting and
+ordering what goes into the day's session — lives in **pure functions with no
+repository**. Another layer loads and saves. This is the part clinics argue about
+and change, so every case has to be exercisable with plain objects, no database.
+
+## Operations that tolerate repetition
+
+Double taps, flaky networks, two devices: the client will repeat requests, and the
+server has to converge. Starting and finishing a session are idempotent —
+repeating returns the same result, and the engine never runs twice over the same
+session.
+
+The pattern adopted: **the unique index is the guarantee; the prior lookup is only
+the fast path.** Two simultaneous requests both pass the lookup, both process, and
+the second one hits the database index and rolls back its own transaction. The
+uniqueness violation is caught and treated as "already done", never as a 500.
+PostgreSQL serializes the race; a read followed by a decision would not.
+
+## A calendar day is not UTC
+
+Almost everything in the domain is "per day": when a review falls due, which day
+a session belongs to, which day the plan covers. A day in UTC is not the clinic's
+day — from 9 pm in São Paulo it is already tomorrow in UTC — and arithmetic done
+in UTC gets the date wrong without warning.
+
+The fix was to change the representation: a day is an **`YYYY-MM-DD` string
+resolved in the organization's time zone**, never a `Date`. A `Date` is an instant,
+and an instant only becomes a day once a time zone names it.
+
+```ts
+// A calendar day is resolved in a time zone, never taken from the UTC instant.
+function calendarDay(instant: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone }).format(instant);
+}
+
+const at = new Date('2026-03-15T00:30:00Z');
+
+at.toISOString().slice(0, 10); // '2026-03-15' — the day in UTC
+calendarDay(at, 'America/Sao_Paulo'); // '2026-03-14' — the clinic's day
+```
+
+## History that is never rewritten
+
+Clinical data is the product, and the design favors the record:
+
+- every state change of a task writes an event — from where, to where, why and by
+  whom. There are no silent changes;
+- session results and events are insert-only;
+- the plan the system suggested at the start of a session is frozen as a
+  snapshot, next to what actually happened. The difference between the two is
+  information, not an error;
+- the settings that apply to a task are resolved and stored with the result, so a
+  past session is never re-judged by a rule that did not exist when it happened.
+
+## Two frontends, the same rules
+
+The panel and the app share an architecture without sharing code:
+
+- **Feature-first.** Each domain is an isolated module — API, hooks, components,
+  schemas, types — that has to be readable, reviewable and deletable on its own.
+  There are 17 modules in the panel and 4 in the app.
+- **One-way flow**: route, screen, components, hook, API. A component does not
+  call the API, a hook does not build a URL, and the API layer knows neither React
+  nor translation.
+- **The linter enforces it, so review does not have to remember.** Importing
+  another module's internal path, using the HTTP client outside the API layer, or
+  letting `shared/` depend on `features/` fails the lint. In the panel, the same
+  goes for colors and font sizes outside the design system's scale.
+- **Import cycles.** The ESLint plugin for this does not support the ESLint
+  version the panel uses, and the fork that replaces it installed, ran and
+  detected nothing. A rule that never fires is worse than no rule, because it looks
+  like protection. A custom script walks the import graph and fails the lint;
+  moving pages out of each module's public API took the panel from one cycle
+  spanning 41 files to zero.
+- **Zod on every response.** With separate repositories, a contract change does
+  not become a compile error, it becomes wrong data in production. Validating at
+  the boundary makes the failure loud and in the right place.
+- **State in the URL.** The active clinic, the search and the page live in the
+  URL, not in hidden state: two tabs can be on different clinics, a link takes you
+  to the exact place and reloading loses no context.
+
+The execution app is the opposite of the panel: almost no management, a single
+task, done well. The same codebase serves web, iOS and Android — for now, web is
+the validation target — with a persisted query cache, haptic feedback and a screen
+that stays awake during the session. One decision that shows up there: **clinical
+writes do not use optimistic updates.** Showing a tap the server never received is
+worse than waiting — the practitioner would carry on believing in a record that
+does not exist. A silent error is worse than a visible wait.
+
+## Quality and operations
+
+- **Tests.** 1,253 unit tests across 75 files, with dependencies mocked and no
+  database access, plus an e2e suite of 24 files that boots the real application
+  against a local PostgreSQL. The e2e suite **refuses to run against any
+  non-local host**: it recreates the schema on every run, and pointing it at a
+  remote database would be destructive.
+- **Schema only through migrations** — 51 so far, never `synchronize`. A migration
+  applied in production is immutable; the fix is a new migration. Local, dev and
+  production have separate configuration and databases, and the default is always
+  local, so that an absent-minded `migration:generate` never diffs the entities
+  against a remote database. On release, migration first, code second.
+- **Billing with Stripe** — checkout, customer portal and plan change — and a
+  read-only mode when the subscription is not active: reads keep working, writes
+  are refused, and the client hides the action instead of letting the 403 appear
+  mid-flow.
+- **AWS infrastructure**: Lambda with the Serverless Framework, transactional
+  e-mail through SES and image uploads to S3 through presigned URLs.
+
+## What this project demonstrates
+
+From an engineering standpoint, the interest here is not the clinical domain. It is
+how a set of rules that clinics argue about and change was isolated in a small,
+deterministic, testable core, surrounded by an API that does not trust the client,
+by operations that tolerate repetition, and by two frontends that fail loudly when
+the contract changes.
+
+The project is still in development.

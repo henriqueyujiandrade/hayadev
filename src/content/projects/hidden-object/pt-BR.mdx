@@ -1,0 +1,225 @@
+---
+title: 'Onde estou?'
+description: Jogo terapêutico de busca visual guiado pela respiração, em React, TypeScript e Canvas, com biofeedback por sensor de frequência cardíaca. Desenvolvido na Self.
+shortDescription: Jogo terapêutico de busca visual com biofeedback respiratório, em React e Canvas.
+projectType: game
+status: active
+role: Desenvolvimento do jogo e das ferramentas de autoria
+technologies:
+  - TypeScript
+  - React
+  - Canvas
+  - Vite
+  - Web Bluetooth
+  - Styled Components
+year: 2026
+featured: true
+confidential: true
+caseStudy: true
+order: 10
+relatedArticles:
+  - perspectiva-2d
+---
+
+**Onde estou?** é um jogo terapêutico de busca visual, no estilo "Onde está
+Wally?". O jogador procura, num mapa ilustrado, os objetos que o jogo pede, um de
+cada vez, e a respiração lenta — medida por um sensor de frequência cardíaca —
+devolve as tentativas que cada erro gasta. Foi desenvolvido na Self, é pensado
+para crianças, em especial com TEA e TDAH, e roda no navegador, embutido no portal
+da plataforma.
+
+O que segue são as decisões técnicas por trás dele.
+
+## Um jogo que não pune
+
+Num jogo terapêutico, a frustração do jogador é o principal risco do produto, e
+isso virou restrição técnica:
+
+- **Um único gesto.** Tocar no objeto. Não há personagem controlado.
+- **Erro não encerra a partida.** Cada erro gasta uma tentativa, e a respiração
+  devolve. Sem tentativas, o mapa continua aceitando zoom e arraste; só a busca
+  espera. Perder a sessão por errar puniria justamente quem mais precisa dela.
+- **Não há contagem regressiva.** Um cronômetro que expira pune, e um que obriga a
+  esperar entedia. O tempo só é consultado quando uma figura é achada.
+- **Cenário de baixo estímulo**, opcional: o mapa fica dessaturado e suavizado.
+
+## Perspectiva sem 3D
+
+O cenário é uma vista de plano de chão. Num plano assim, o tamanho aparente de
+algo apoiado no solo cresce **linearmente** com a altura na tela, a partir de zero
+no horizonte. Uma reta descreve tudo, e por isso duas medições bastam para
+calibrar o mapa inteiro: o mesmo personagem de referência, medido no fundo e na
+frente do cenário.
+
+```ts
+// Duas medições do mesmo personagem definem a reta.
+// altura = inclinação × (y − horizonte)
+function fitPerspective(far: Sample, near: Sample): Perspective {
+  const slope = (near.height - far.height) / (near.y - far.y);
+  return { slope, horizon: far.y - far.height / slope };
+}
+
+const heightAt = (y: number, { slope, horizon }: Perspective, sizeRatio = 1) =>
+  sizeRatio * slope * Math.max(MIN_DEPTH, y - horizon);
+```
+
+Algumas consequências desse modelo:
+
+- **A posição de um objeto é o ponto onde ele pisa no chão**, não o centro do
+  desenho. Com o centro, a conta seria circular: o tamanho dependeria do centro,
+  que depende do tamanho.
+- **O que se define à mão é só o tamanho relativo**, em relação ao personagem de
+  referência. A largura desenhada é derivada dele, da profundidade e da proporção
+  da imagem.
+- **Uma calibração quebrada não derruba só a perspectiva**, porque ela dimensiona
+  todo objeto do mapa. Medições sem sentido são recusadas, e um arquivo corrompido
+  cai para uma reta de reserva em vez de propagar um tamanho inválido. A
+  profundidade tem um piso: sem ele, arrastar um objeto até o céu o faz sumir,
+  e a alça de redimensionar some junto.
+- **Objeto sobre uma bancada está mais perto do observador** do que a altura dele
+  na tela sugere, porque o tampo aparece mais alto que o chão embaixo. A correção
+  depende da profundidade que se quer descobrir, mas com perspectiva linear é uma
+  equação de primeiro grau, resolvida de uma vez, sem aproximações sucessivas.
+
+Compor a cena vira dado: define-se onde o objeto pisa e quão grande ele é, e o
+resto é derivado.
+
+## Onde um objeto pode ficar
+
+A perspectiva resolve o tamanho. Faltava o lugar: um sorteio de coordenadas põe
+uma pessoa em cima de um telhado e uma garrafa dentro da parede, porque o
+algoritmo não enxerga o desenho, só números.
+
+A resposta é uma **máscara de superfícies**: uma imagem em baixa resolução, com
+uma cor por classe — onde uma pessoa fica em pé, onde um objeto é pousado, o que é
+proibido. O padrão é **proibido**. Errar para o lado de recusar é o certo: uma
+área esquecida só deixa de ser sorteada, enquanto uma área permitida por engano
+vira um objeto dentro da parede.
+
+O sorteio é por rejeição. Ele escolhe um ponto na área permitida, monta o objeto
+ali pela perspectiva e testa, em ordem:
+
+- **tamanho mínimo** desenhável e **margem** até a borda;
+- **linha de apoio** sobre a mesma classe de superfície. A linha é uma curva de
+  Bézier quadrática cujas pontas o autor arrasta, e a reta é só o caso em que o
+  controle fica no meio. Uma forma calculada resolvia um tipo de objeto e errava
+  os outros, porque a forma certa depende de como cada figura foi desenhada;
+- **corpo fora da área proibida**, conferido pela **silhueta** do desenho, medida
+  nos pixels opacos, e não pelo retângulo, cujos cantos transparentes recusariam
+  posições boas à toa;
+- **distância mínima** dos objetos já colocados;
+- **dificuldade**, tratada adiante.
+
+As superfícies de cada objeto são uma lista **em ordem de preferência**, e a
+primeira é esgotada antes da segunda. Uma versão anterior repartia a chance entre
+as classes por uma fatia fixa: a proporção era estável, mas proporção não é
+preferência, e a maioria dos objetos ia para o chão mesmo havendo bancada livre.
+Os objetos entram do maior para o menor, porque o grande tem menos lugares onde
+cabe.
+
+Quando as tentativas acabam, o objeto fica na posição definida à mão. O pior caso
+é "esta partida repetiu uma posição", nunca "a partida não abre", e é por isso que
+posicionar à mão continua valendo a pena: é a rede de segurança de uma máscara mal
+pintada.
+
+## Partidas reproduzíveis
+
+O sorteio usa um gerador pseudoaleatório com semente, e não `Math.random`. Num
+jogo terapêutico isso é requisito: permite repetir uma sessão, comparar duas e
+reproduzir um relato de bug. A escolha das figuras pedidas usa uma semente
+**derivada** da semente da colocação, para que mexer numa não embaralhe a outra.
+
+## Dificuldade como terceira camada
+
+O tamanho está preso à perspectiva e o lugar à máscara. A alavanca de dificuldade
+é outra: o quanto o cenário está **carregado** em volta do objeto. Sobre areia
+lisa ele salta aos olhos, e entre telhas e barris ele some.
+
+A medida é o desvio da luminância numa janela em volta do ponto. A janela é fixa,
+e não do tamanho do objeto, porque o que torna a busca difícil é a bagunça da
+região que o olho varre. Para isso funcionar dentro do sorteio, as somas ficam em
+**tabelas acumuladas**: uma partida chega a milhares de tentativas, e sem elas
+cada uma varreria a janela inteira. Com elas, qualquer janela custa quatro leituras
+por tabela.
+
+A partida **sobe**: os primeiros objetos pedidos caem em fundo limpo e os últimos
+em região carregada. Começar difícil é o jeito mais rápido de perder o jogador na
+primeira busca, e num jogo guiado por respiração a frustração inicial custa a
+sessão inteira. A exigência afrouxa conforme as tentativas passam, para a
+dificuldade nunca custar uma posição sorteada nem empurrar o objeto para uma
+superfície menos preferida: dificuldade aproximada é melhor que posição perdida.
+
+## Ferramentas de autoria
+
+Um jogo com dezenas de figuras num cenário denso vive de conteúdo. Ajustar
+posições à mão só revela o erro depois de recompilar, então o projeto inclui um
+**editor no próprio navegador**: arrastar e redimensionar figuras, medir
+proporções contra uma régua, calibrar a perspectiva em dois passos, pintar a
+máscara e sortear uma partida de prévia, com semente, para ver em que classe cada
+objeto pousou e o quanto foi difícil.
+
+A ordem do trabalho importa. Primeiro as **proporções entre os objetos**, depois a
+calibração: ela dá a escala absoluta a um conjunto que já precisa estar coerente
+entre si, e calibrar antes só espalha o erro pelo cenário inteiro.
+
+Um navegador não escreve no disco do projeto, então um plugin do Vite faz isso, só
+em desenvolvimento. Ele grava três arquivos fixos, com caminhos que não vêm da
+requisição, e valida cada campo antes de gravar. Em produção o editor nem monta.
+Outro plugin varre as pastas de figuras e publica o catálogo como módulo virtual:
+soltar um arquivo numa pasta o faz aparecer no jogo e no editor, sem registrar nada
+em código. Registrar cada figura em código era o atrito que impedia o acervo de
+crescer.
+
+## Canvas para a cena, React em volta
+
+A cena é desenhada em Canvas, do fundo para a frente, pelo mesmo ponto de apoio que
+define a escala. React cuida do que está em volta: HUD, menus e telas. O zoom e o
+deslocamento do mapa ficam em refs, e não em estado, porque o laço de desenho os lê
+a cada quadro, e re-renderizar a cada pixel de arraste desperdiçaria trabalho.
+
+Dois detalhes de imagem pedem tratamentos opostos. O mapa é bem maior que a área em
+que aparece, então é reamostrado com qualidade alta, senão as linhas finas cintilam.
+A máscara, por outro lado, é decodificada com a suavização **desligada**: ela é
+dado, não imagem, e um pixel de fronteira que vira uma cor intermediária pertenceria
+a uma classe que não existe.
+
+A entrada é pensada para o toque:
+
+- **Tocar ou arrastar** é decidido pela distância percorrida. Abaixo de um limiar,
+  é uma tentativa de busca; acima, é arraste e não gasta tentativa. É o que impede
+  que o tremor natural do dedo registre um erro.
+- **A área de toque** acompanha o tamanho desenhado, com uma folga proporcional e um
+  piso em pixels, para um objeto pequeno não ficar impossível no celular.
+- **Só a figura pedida conta como acerto.** O acervo inteiro está no mapa, e o resto
+  é distração: com só as pedidas num cenário vazio, achar vira varredura mecânica.
+  Como quem cresce com o acervo é o número de distrações, e não o de buscas, a
+  partida não fica mais longa a cada figura nova.
+- **No modo de baixo estímulo, o filtro vale também para as figuras.** Sem isso elas
+  ficariam saturadas sobre um mapa suavizado e entregariam a resposta.
+
+## Biofeedback e plataforma
+
+A camada de biofeedback vem do template da linha de jogos terapêuticos da Self e foi
+reaproveitada. A variabilidade da frequência cardíaca (RMSSD) é calculada no
+navegador a partir dos intervalos entre batimentos do sensor, via Web Bluetooth — ou
+recebida do portal, quando é ele quem conecta o sensor —, comparada com uma
+referência da calibração e reduzida a um nível. O jogo consome só esse nível, e é
+ele que devolve as tentativas. Sem sensor, um modo automático devolve por tempo, para
+o jogo continuar utilizável.
+
+O jogo roda embutido no portal da plataforma, que cria a sessão e repassa os dados
+por mensagens entre janelas com a origem validada. Trocar de jogo foi trocar a
+camada de jogo, mantendo a separação do template: serviços para a lógica, hooks como
+ponte e componentes só para orquestrar e desenhar. É essa camada de jogo que este
+texto descreve.
+
+## O que este projeto demonstra
+
+Do ponto de vista de engenharia, o interesse aqui não é o gênero do jogo. É que duas
+exigências opostas — o cenário precisa parecer desenhado à mão, e as partidas
+precisam ser variadas, justas e reproduzíveis — foram reduzidas a três camadas
+independentes (perspectiva, máscara e dificuldade) e a ferramentas que transformam
+composição de cena em dados, com o pior caso sempre degradando para "a posição
+definida à mão", e nunca para "a partida não abre".
+
+O projeto segue em desenvolvimento.

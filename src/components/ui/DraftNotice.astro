@@ -1,0 +1,18 @@
+---
+import { FileExclamationPoint } from '@lucide/astro';
+
+interface Props {
+  message: string;
+}
+
+const { message } = Astro.props;
+---
+
+{/*
+  Only ever rendered while `import.meta.env.DEV` is true — drafts have no routes
+  in a production build, so this banner cannot reach the published site.
+*/}
+<p class="flex items-center gap-2 rounded-md border border-accent-line bg-accent-soft px-3 py-2 font-mono text-[0.75rem] text-accent">
+  <FileExclamationPoint class="size-4 shrink-0" aria-hidden="true" />
+  {message}
+</p>

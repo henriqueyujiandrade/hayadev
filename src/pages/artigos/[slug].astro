@@ -1,0 +1,11 @@
+---
+import type { GetStaticPaths } from 'astro';
+import ArticleRoute from '@routes/ArticleRoute.astro';
+import { articlePaths } from '@routes/paths';
+
+export const getStaticPaths = (() => articlePaths('pt-BR')) satisfies GetStaticPaths;
+
+const { article } = Astro.props;
+---
+
+<ArticleRoute article={article} locale="pt-BR" />

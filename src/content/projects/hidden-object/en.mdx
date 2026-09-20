@@ -1,0 +1,228 @@
+---
+title: 'Onde estou?'
+description: A therapeutic visual-search game guided by breathing, built with React, TypeScript and Canvas, with heart-rate sensor biofeedback. Built at Self.
+shortDescription: A therapeutic visual-search game with breathing biofeedback, in React and Canvas.
+projectType: game
+status: active
+role: Development of the game and its authoring tools
+technologies:
+  - TypeScript
+  - React
+  - Canvas
+  - Vite
+  - Web Bluetooth
+  - Styled Components
+year: 2026
+featured: true
+confidential: true
+caseStudy: true
+order: 10
+relatedArticles:
+  - perspectiva-2d
+---
+
+**Onde estou?** (Portuguese for "Where am I?") is a therapeutic visual-search game
+in the style of "Where's Wally?". The player looks for the objects the game asks
+for, one at a time, on an illustrated map, and slow breathing — measured by a
+heart-rate sensor — gives back the attempts that each mistake spends. It was built
+at Self, it is designed for children, especially those with autism and ADHD, and it
+runs in the browser, embedded in the platform's portal.
+
+What follows are the technical decisions behind it.
+
+## A game that does not punish
+
+In a therapeutic game, the player's frustration is the product's main risk, and
+that became a technical constraint:
+
+- **A single gesture.** Tapping the object. There is no controlled character.
+- **A mistake does not end the match.** Each mistake spends an attempt, and
+  breathing gives it back. With no attempts left, the map still accepts zoom and
+  pan; only the search waits. Losing the session for making mistakes would punish
+  exactly the people who need it most.
+- **There is no countdown.** A timer that expires punishes, and one that forces you
+  to wait bores. Time is only consulted when a figure is found.
+- **A low-stimulus scene**, optional: the map is desaturated and softened.
+
+## Perspective without 3D
+
+The scene is a ground-plane view. On a plane like that, the apparent size of
+something resting on the ground grows **linearly** with its height on screen,
+starting from zero at the horizon. One straight line describes everything, so two
+measurements are enough to calibrate the whole map: the same reference character,
+measured at the back and at the front of the scene.
+
+```ts
+// Two measurements of the same character define the line.
+// height = slope × (y − horizon)
+function fitPerspective(far: Sample, near: Sample): Perspective {
+  const slope = (near.height - far.height) / (near.y - far.y);
+  return { slope, horizon: far.y - far.height / slope };
+}
+
+const heightAt = (y: number, { slope, horizon }: Perspective, sizeRatio = 1) =>
+  sizeRatio * slope * Math.max(MIN_DEPTH, y - horizon);
+```
+
+A few consequences of that model:
+
+- **An object's position is the point where it touches the ground**, not the
+  center of the drawing. With the center, the math would be circular: size would
+  depend on the center, which depends on the size.
+- **Only the relative size is set by hand**, relative to the reference character.
+  The drawn width is derived from it, from the depth and from the image's aspect
+  ratio.
+- **A broken calibration does not only break perspective**, because it sizes every
+  object on the map. Nonsensical measurements are refused, and a corrupted file
+  falls back to a reserve line instead of propagating an invalid size. Depth has a
+  floor: without it, dragging an object up to the sky makes it vanish, and the
+  resize handle vanishes with it.
+- **An object on a counter is closer to the viewer** than its height on screen
+  suggests, because the counter top appears higher than the ground beneath it. The
+  correction depends on the depth being solved for, but with linear perspective it
+  is a first-degree equation, solved in one step with no successive approximation.
+
+Composing the scene becomes data: you define where the object stands and how big it
+is, and everything else is derived.
+
+## Where an object can go
+
+Perspective solves size. What was missing was place: drawing random coordinates
+puts a person on top of a roof and a bottle inside a wall, because the algorithm
+does not see the illustration, only numbers.
+
+The answer is a **surface mask**: a low-resolution image with one color per class —
+where a person stands, where an object is set down, what is forbidden. The default
+is **forbidden**. Erring on the side of refusing is the right call: a forgotten area
+is simply never drawn from, while an area allowed by mistake becomes an object
+inside a wall.
+
+The draw is by rejection. It picks a point in the allowed area, builds the object
+there using the perspective, and tests, in order:
+
+- the minimum drawable **size** and the **margin** to the map edge;
+- the **support line** on the same surface class. The line is a quadratic Bézier
+  curve whose endpoints the author drags, and a straight line is just the case
+  where the control sits in the middle. A computed shape solved one kind of object
+  and got the others wrong, because the right shape depends on how each figure was
+  drawn;
+- **body clear of the forbidden area**, checked against the drawing's
+  **silhouette**, measured from its opaque pixels, and not against its rectangle,
+  whose transparent corners would reject good positions for no reason;
+- **minimum distance** from the objects already placed;
+- **difficulty**, covered below.
+
+Each object's surfaces are a list **in order of preference**, and the first one is
+exhausted before the second. An earlier version split the chance between classes by
+a fixed share: the proportion was stable, but a proportion is not a preference, and
+most objects went to the ground even when there was free counter space. Objects are
+placed from largest to smallest, because the large one has the fewest places where
+it fits.
+
+When the attempts run out, the object stays at its hand-set position. The worst case
+is "this match repeated a position", never "the match does not open", which is why
+placing by hand is still worth it: it is the safety net for a badly painted mask.
+
+## Reproducible matches
+
+The draw uses a seeded pseudo-random generator, not `Math.random`. In a therapeutic
+game that is a requirement: it makes it possible to repeat a session, compare two
+of them and reproduce a bug report. The choice of requested figures uses a seed
+**derived** from the placement seed, so that touching one does not reshuffle the
+other.
+
+## Difficulty as a third layer
+
+Size is tied to the perspective and place to the mask. The difficulty lever is
+another one: how **busy** the scene is around the object. On smooth sand it jumps
+out, and among roof tiles and barrels it disappears.
+
+The measure is the standard deviation of luminance in a window around the point.
+The window is fixed, not the size of the object, because what makes the search hard
+is the clutter of the region the eye sweeps. To make this work inside the draw, the
+sums are kept in **summed-area tables**: a match makes thousands of attempts, and
+without them each one would scan the whole window. With them, any window costs four
+reads per table.
+
+The match **ramps up**: the first requested objects land on a clean background and
+the last ones in a busy region. Starting hard is the fastest way to lose the player
+on the first search, and in a breathing-guided game early frustration costs the
+whole session. The requirement loosens as attempts pass, so difficulty never costs a
+drawn position or pushes the object to a less preferred surface: approximate
+difficulty beats a lost position.
+
+## Authoring tools
+
+A game with dozens of figures in a dense scene lives on content. Adjusting
+positions by hand only reveals the mistake after a rebuild, so the project includes
+an **in-browser editor**: dragging and resizing figures, measuring proportions
+against a ruler, calibrating the perspective in two steps, painting the mask and
+drawing a preview match, with a seed, to see which class each object landed on and
+how hard it turned out.
+
+The order of the work matters. **Proportions between objects** first, then
+calibration: it gives absolute scale to a set that must already be coherent with
+itself, and calibrating first only spreads the error across the whole scene.
+
+A browser cannot write to the project's disk, so a Vite plugin does it, in
+development only. It writes three fixed files, with paths that do not come from the
+request, and validates every field before writing. In production the editor does not
+even mount. Another plugin scans the figure folders and publishes the catalog as a
+virtual module: dropping a file in a folder makes it show up in the game and in the
+editor, with nothing to register in code. Registering each figure in code was the
+friction that kept the catalog from growing.
+
+## Canvas for the scene, React around it
+
+The scene is drawn on a Canvas, back to front, by the same support point that
+defines the scale. React takes care of what surrounds it: HUD, menus and screens.
+The map's zoom and offset live in refs, not in state, because the draw loop reads
+them every frame, and re-rendering on every pixel of a drag would waste work.
+
+Two image details call for opposite treatments. The map is much larger than the area
+it appears in, so it is resampled at high quality, otherwise the thin lines shimmer.
+The mask, on the other hand, is decoded with smoothing **turned off**: it is data,
+not an image, and a boundary pixel that turns into an intermediate color would
+belong to a class that does not exist.
+
+Input is designed for touch:
+
+- **Tap or drag** is decided by the distance traveled. Below a threshold it is a
+  search attempt; above it, it is a drag and spends no attempt. That is what keeps
+  natural finger tremor from registering as a mistake.
+- **The touch area** follows the drawn size, with a proportional margin and a floor
+  in pixels, so a small object does not become impossible on a phone.
+- **Only the requested figure counts as a hit.** The whole catalog is on the map, and
+  the rest is distraction: with only the requested ones in an empty scene, finding
+  them becomes mechanical sweeping. Since what grows with the catalog is the number
+  of distractions and not the number of searches, a match does not get longer with
+  each new figure.
+- **In low-stimulus mode, the filter applies to the figures too.** Without that they
+  would stay saturated on a softened map and give the answer away.
+
+## Biofeedback and platform
+
+The biofeedback layer comes from the template for Self's therapeutic games and was
+reused. Heart-rate variability (RMSSD) is computed in the browser from the intervals
+between the sensor's heartbeats, over Web Bluetooth — or received from the portal,
+when it is the one connecting the sensor —, compared against a reference from the
+calibration and reduced to a level. The game consumes only that level, and it is what
+gives the attempts back. Without a sensor, an automatic mode gives them back over
+time, so the game stays usable.
+
+The game runs embedded in the platform's portal, which creates the session and
+relays data through cross-window messages with the origin validated. Switching games
+meant switching the game layer, keeping the template's separation: services for the
+logic, hooks as a bridge, and components only to orchestrate and draw. It is this game
+layer that this text describes.
+
+## What this project demonstrates
+
+From an engineering standpoint, the interest here is not the game's genre. It is that
+two opposing demands — the scene must look hand-drawn, and matches must be varied,
+fair and reproducible — were reduced to three independent layers (perspective, mask
+and difficulty) and to tools that turn scene composition into data, with the worst
+case always degrading to "the hand-set position", and never to "the match does not
+open".
+
+The project is still in development.

@@ -1,0 +1,27 @@
+---
+interface Props {
+  class?: string;
+}
+
+const { class: className = '' } = Astro.props;
+---
+
+{/*
+  Monogram: an H whose crossbar is offset, echoing a code indent. Drawn as inline
+  SVG so it inherits the accent token and costs no extra request.
+*/}
+<svg
+  viewBox="0 0 24 24"
+  class:list={['size-[1.375rem] shrink-0', className]}
+  fill="none"
+  aria-hidden="true"
+  focusable="false"
+>
+  <rect x="0.75" y="0.75" width="22.5" height="22.5" rx="5.5" class="fill-accent" />
+  <path
+    d="M7.75 6.5v11M16.25 6.5v11M7.75 12.75h8.5"
+    class="stroke-accent-contrast"
+    stroke-width="2"
+    stroke-linecap="round"
+  />
+</svg>

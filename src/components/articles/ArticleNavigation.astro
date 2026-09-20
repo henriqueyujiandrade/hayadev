@@ -1,0 +1,50 @@
+---
+import { ArrowLeft, ArrowRight } from '@lucide/astro';
+import type { Locale } from '@config/locales';
+import { useTranslations } from '@i18n/index';
+import type { LocalizedArticle } from '@utils/content';
+import { localizedPath } from '@utils/routes';
+
+interface Props {
+  previous?: LocalizedArticle;
+  next?: LocalizedArticle;
+  locale: Locale;
+}
+
+const { previous, next, locale } = Astro.props;
+const t = useTranslations(locale);
+---
+
+{(previous || next) && (
+  <nav aria-label={t.article.backToList} class="grid gap-4 sm:grid-cols-2">
+    {previous ? (
+      <a
+        href={localizedPath('articles', locale, previous.slug)}
+        rel="prev"
+        class="group flex flex-col gap-1.5 rounded-lg border border-border p-5 transition-colors hover:border-border-strong"
+      >
+        <span class="flex items-center gap-1.5 font-mono text-[0.6875rem] text-ink-subtle uppercase">
+          <ArrowLeft class="size-3.5" aria-hidden="true" />
+          {t.article.previous}
+        </span>
+        <span class="font-medium text-ink">{previous.data.title}</span>
+      </a>
+    ) : (
+      <div class="hidden sm:block" />
+    )}
+
+    {next && (
+      <a
+        href={localizedPath('articles', locale, next.slug)}
+        rel="next"
+        class="group flex flex-col gap-1.5 rounded-lg border border-border p-5 text-end transition-colors hover:border-border-strong sm:col-start-2"
+      >
+        <span class="flex items-center justify-end gap-1.5 font-mono text-[0.6875rem] text-ink-subtle uppercase">
+          {t.article.next}
+          <ArrowRight class="size-3.5" aria-hidden="true" />
+        </span>
+        <span class="font-medium text-ink">{next.data.title}</span>
+      </a>
+    )}
+  </nav>
+)}

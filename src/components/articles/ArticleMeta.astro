@@ -1,0 +1,43 @@
+---
+import { CalendarDays, Clock, RefreshCw } from '@lucide/astro';
+import type { Locale } from '@config/locales';
+import { interpolate, useTranslations } from '@i18n/index';
+import type { LocalizedArticle } from '@utils/content';
+import { formatDate, toISODate } from '@utils/date';
+
+interface Props {
+  article: LocalizedArticle;
+  locale: Locale;
+  class?: string;
+}
+
+const { article, locale, class: className = '' } = Astro.props;
+const t = useTranslations(locale);
+const { data } = article;
+---
+
+<dl class:list={['flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-ink-muted', className]}>
+  <div class="flex items-center gap-1.5">
+    <CalendarDays class="size-4 text-ink-subtle" aria-hidden="true" />
+    <dt class="sr-only">{t.article.publishedOn}</dt>
+    <dd>
+      <time datetime={toISODate(data.pubDate)}>{formatDate(data.pubDate, locale)}</time>
+    </dd>
+  </div>
+
+  {data.updatedDate && (
+    <div class="flex items-center gap-1.5">
+      <RefreshCw class="size-4 text-ink-subtle" aria-hidden="true" />
+      <dt class="sr-only">{t.article.updatedOn}</dt>
+      <dd>
+        <time datetime={toISODate(data.updatedDate)}>{formatDate(data.updatedDate, locale)}</time>
+      </dd>
+    </div>
+  )}
+
+  <div class="flex items-center gap-1.5">
+    <Clock class="size-4 text-ink-subtle" aria-hidden="true" />
+    <dt class="sr-only">{t.article.readingTimeLabel}</dt>
+    <dd>{interpolate(t.article.readingTime, { minutes: article.readingTime })}</dd>
+  </div>
+</dl>

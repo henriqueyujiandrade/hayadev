@@ -1,0 +1,111 @@
+---
+import { Menu, X } from '@lucide/astro';
+import Brand from '@components/navigation/Brand.astro';
+import LanguageSwitcher from '@components/navigation/LanguageSwitcher.astro';
+import MainNav from '@components/navigation/MainNav.astro';
+import ThemeToggle from '@components/navigation/ThemeToggle.astro';
+import Container from '@components/ui/Container.astro';
+import type { Locale } from '@config/locales';
+import { useTranslations } from '@i18n/index';
+
+interface Props {
+  locale: Locale;
+  alternatePaths?: Partial<Record<Locale, string>>;
+}
+
+const { locale, alternatePaths } = Astro.props;
+const t = useTranslations(locale);
+---
+
+<header class="sticky top-0 z-50 border-b border-border bg-bg/85 backdrop-blur-sm supports-[not(backdrop-filter:blur(0))]:bg-bg">
+  <Container class="flex h-16 items-center justify-between gap-4">
+    <Brand locale={locale} />
+
+    <div class="flex items-center gap-2">
+      <nav aria-label={t.nav.primaryLabel} class="hidden md:block">
+        <MainNav locale={locale} layout="bar" />
+      </nav>
+
+      <div class="hidden h-5 w-px bg-border md:block"></div>
+
+      <LanguageSwitcher locale={locale} alternatePaths={alternatePaths} />
+      <ThemeToggle locale={locale} />
+
+      {/*
+        The mobile menu is a native <details>. It opens, closes and is keyboard
+        operable with no JavaScript at all; the script below only adds the
+        conveniences the element does not provide (Escape, outside click,
+        closing on navigation). The links are always in the HTML, so they are
+        crawlable whether or not the panel is open.
+      */}
+      <details data-mobile-menu class="relative md:hidden">
+        <summary
+          class="inline-grid size-9 cursor-pointer list-none place-items-center rounded-md border border-border-control bg-surface text-ink-muted transition-colors hover:border-ink-muted hover:text-ink [&::-webkit-details-marker]:hidden"
+          aria-label={t.nav.menu}
+        >
+          <Menu class="menu-icon-open size-4" aria-hidden="true" />
+          <X class="menu-icon-close size-4" aria-hidden="true" />
+        </summary>
+
+        <nav
+          aria-label={t.nav.primaryLabel}
+          class="absolute end-0 top-[calc(100%+0.625rem)] w-56 rounded-lg border border-border bg-surface p-1.5 shadow-raised"
+        >
+          <MainNav locale={locale} layout="stack" />
+        </nav>
+      </details>
+    </div>
+  </Container>
+</header>
+
+<style>
+  /* Swap the summary icon with the open state; no JavaScript involved. */
+  .menu-icon-close {
+    display: none;
+  }
+
+  details[open] .menu-icon-open {
+    display: none;
+  }
+
+  details[open] .menu-icon-close {
+    display: block;
+  }
+
+  summary {
+    list-style: none;
+  }
+</style>
+
+<script>
+  const menus = document.querySelectorAll<HTMLDetailsElement>('[data-mobile-menu]');
+
+  for (const menu of menus) {
+    const summary = menu.querySelector('summary');
+
+    /* Escape closes the panel and returns focus to the control that opened it. */
+    menu.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && menu.open) {
+        menu.open = false;
+        summary?.focus();
+      }
+    });
+
+    /* A click outside dismisses it, matching how menus behave elsewhere. */
+    document.addEventListener('click', (event) => {
+      if (menu.open && !menu.contains(event.target as Node)) menu.open = false;
+    });
+
+    /* Following a link should not leave the panel open behind the new page. */
+    menu.addEventListener('click', (event) => {
+      if ((event.target as HTMLElement).closest('a')) menu.open = false;
+    });
+  }
+
+  /* Reaching the desktop breakpoint hides the panel; make sure it is closed. */
+  const desktop = window.matchMedia('(min-width: 48rem)');
+  desktop.addEventListener('change', (event) => {
+    if (!event.matches) return;
+    for (const menu of menus) menu.open = false;
+  });
+</script>

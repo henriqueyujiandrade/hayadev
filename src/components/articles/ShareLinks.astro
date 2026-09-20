@@ -1,0 +1,73 @@
+---
+import { Check, Link2 } from '@lucide/astro';
+import LinkedinIcon from '@components/icons/LinkedinIcon.astro';
+import type { Locale } from '@config/locales';
+import { useTranslations } from '@i18n/index';
+
+interface Props {
+  url: string;
+  title: string;
+  locale: Locale;
+}
+
+const { url, title, locale } = Astro.props;
+const t = useTranslations(locale);
+
+/* Plain share URLs: no third-party widget, no tracking script, no extra bytes. */
+const linkedin = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`;
+---
+
+<div class="flex items-center gap-1">
+  <h2 class="sr-only">{t.article.shareLabel}</h2>
+
+  <a
+    href={linkedin}
+    target="_blank"
+    rel="noopener noreferrer"
+    class="inline-grid size-9 place-items-center rounded-md text-ink-muted transition-colors hover:bg-surface-muted hover:text-ink"
+  >
+    <LinkedinIcon class="size-4" />
+    <span class="sr-only">LinkedIn</span>
+  </a>
+
+  {/* Enhancement only: the URL is always in the address bar regardless. */}
+  <button
+    type="button"
+    data-copy-link
+    data-url={url}
+    data-title={title}
+    class="inline-grid size-9 place-items-center rounded-md text-ink-muted transition-colors hover:bg-surface-muted hover:text-ink"
+  >
+    <Link2 class="copy-idle size-4" aria-hidden="true" />
+    <Check class="copy-done hidden size-4 text-accent" aria-hidden="true" />
+    <span class="sr-only">{t.article.shareLabel}</span>
+  </button>
+</div>
+
+<script>
+  const buttons = document.querySelectorAll<HTMLButtonElement>('[data-copy-link]');
+
+  for (const button of buttons) {
+    const idle = button.querySelector('.copy-idle');
+    const done = button.querySelector('.copy-done');
+
+    button.addEventListener('click', async () => {
+      const url = button.dataset.url;
+      if (!url) return;
+
+      try {
+        await navigator.clipboard.writeText(url);
+      } catch {
+        return; /* Clipboard denied: leave the control untouched. */
+      }
+
+      idle?.classList.add('hidden');
+      done?.classList.remove('hidden');
+
+      window.setTimeout(() => {
+        idle?.classList.remove('hidden');
+        done?.classList.add('hidden');
+      }, 1600);
+    });
+  }
+</script>

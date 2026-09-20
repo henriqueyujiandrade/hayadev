@@ -1,0 +1,71 @@
+---
+import { Globe, Mail, Rss } from '@lucide/astro';
+import GithubIcon from '@components/icons/GithubIcon.astro';
+import LinkedinIcon from '@components/icons/LinkedinIcon.astro';
+import type { Locale } from '@config/locales';
+import { person } from '@config/person';
+import { getSocialLinks, type SocialPlatform } from '@config/social';
+import { useTranslations } from '@i18n/index';
+import { feedPath } from '@utils/routes';
+import { relForUrl } from '@utils/url';
+
+interface Props {
+  locale: Locale;
+  /** Include the RSS feed alongside the profiles. */
+  includeFeed?: boolean;
+  /** Include a mailto link when an address is configured. */
+  includeEmail?: boolean;
+  class?: string;
+}
+
+const { locale, includeFeed = false, includeEmail = false, class: className = '' } = Astro.props;
+const t = useTranslations(locale);
+
+const icons: Record<SocialPlatform, typeof Globe> = {
+  github: GithubIcon,
+  linkedin: LinkedinIcon,
+  x: Globe,
+  mastodon: Globe,
+  bluesky: Globe,
+};
+
+/*
+ * Only configured profiles are rendered. An unset URL produces no element at
+ * all — the site never ships a dead icon or a placeholder link.
+ */
+const profiles = getSocialLinks().map((link) => ({
+  href: link.url,
+  label: link.label,
+  Icon: icons[link.platform],
+  external: true,
+}));
+
+const extras = [
+  ...(includeEmail && person.email
+    ? [{ href: `mailto:${person.email}`, label: person.email, Icon: Mail, external: false }]
+    : []),
+  ...(includeFeed
+    ? [{ href: feedPath(locale), label: t.footer.rss, Icon: Rss, external: false }]
+    : []),
+];
+
+const items = [...profiles, ...extras];
+---
+
+{items.length > 0 && (
+  <ul class:list={['flex items-center gap-1', className]}>
+    {items.map((item) => (
+      <li>
+        <a
+          href={item.href}
+          rel={relForUrl(item.href)}
+          target={item.external ? '_blank' : undefined}
+          class="inline-grid size-9 place-items-center rounded-md text-ink-muted transition-colors hover:bg-surface-muted hover:text-ink"
+        >
+          <item.Icon class="size-[1.125rem]" aria-hidden="true" />
+          <span class="sr-only">{item.label}</span>
+        </a>
+      </li>
+    ))}
+  </ul>
+)}

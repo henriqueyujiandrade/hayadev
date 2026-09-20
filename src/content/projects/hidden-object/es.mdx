@@ -1,0 +1,229 @@
+---
+title: 'Onde estou?'
+description: Juego terapéutico de búsqueda visual guiado por la respiración, en React, TypeScript y Canvas, con biofeedback por sensor de frecuencia cardíaca. Desarrollado en Self.
+shortDescription: Juego terapéutico de búsqueda visual con biofeedback respiratorio, en React y Canvas.
+projectType: game
+status: active
+role: Desarrollo del juego y de las herramientas de autoría
+technologies:
+  - TypeScript
+  - React
+  - Canvas
+  - Vite
+  - Web Bluetooth
+  - Styled Components
+year: 2026
+featured: true
+confidential: true
+caseStudy: true
+order: 10
+relatedArticles:
+  - perspectiva-2d
+---
+
+**Onde estou?** (en portugués, «¿Dónde estoy?») es un juego terapéutico de búsqueda
+visual, al estilo de «¿Dónde está Wally?». El jugador busca, en un mapa ilustrado,
+los objetos que el juego pide, de uno en uno, y la respiración lenta — medida por un
+sensor de frecuencia cardíaca — devuelve los intentos que gasta cada error. Fue
+desarrollado en Self, está pensado para niños, en especial con TEA y TDAH, y corre en
+el navegador, embebido en el portal de la plataforma.
+
+Lo que sigue son las decisiones técnicas detrás de él.
+
+## Un juego que no castiga
+
+En un juego terapéutico, la frustración del jugador es el principal riesgo del
+producto, y eso se volvió una restricción técnica:
+
+- **Un único gesto.** Tocar el objeto. No hay personaje controlado.
+- **Un error no termina la partida.** Cada error gasta un intento, y la respiración
+  lo devuelve. Sin intentos, el mapa sigue aceptando zoom y arrastre; solo la
+  búsqueda espera. Perder la sesión por equivocarse castigaría justamente a quien
+  más la necesita.
+- **No hay cuenta regresiva.** Un cronómetro que expira castiga, y uno que obliga a
+  esperar aburre. El tiempo solo se consulta cuando se encuentra una figura.
+- **Escena de bajo estímulo**, opcional: el mapa queda desaturado y suavizado.
+
+## Perspectiva sin 3D
+
+La escena es una vista de plano de suelo. En un plano así, el tamaño aparente de algo
+apoyado en el suelo crece **linealmente** con la altura en pantalla, a partir de cero
+en el horizonte. Una recta lo describe todo, y por eso dos mediciones bastan para
+calibrar el mapa entero: el mismo personaje de referencia, medido al fondo y al
+frente de la escena.
+
+```ts
+// Dos mediciones del mismo personaje definen la recta.
+// altura = pendiente × (y − horizonte)
+function fitPerspective(far: Sample, near: Sample): Perspective {
+  const slope = (near.height - far.height) / (near.y - far.y);
+  return { slope, horizon: far.y - far.height / slope };
+}
+
+const heightAt = (y: number, { slope, horizon }: Perspective, sizeRatio = 1) =>
+  sizeRatio * slope * Math.max(MIN_DEPTH, y - horizon);
+```
+
+Algunas consecuencias de ese modelo:
+
+- **La posición de un objeto es el punto donde pisa el suelo**, no el centro del
+  dibujo. Con el centro, la cuenta sería circular: el tamaño dependería del centro,
+  que depende del tamaño.
+- **Lo único que se define a mano es el tamaño relativo**, respecto del personaje de
+  referencia. El ancho dibujado se deriva de él, de la profundidad y de la proporción
+  de la imagen.
+- **Una calibración rota no solo rompe la perspectiva**, porque dimensiona todos los
+  objetos del mapa. Las mediciones sin sentido se rechazan, y un archivo corrupto cae
+  a una recta de reserva en lugar de propagar un tamaño inválido. La profundidad
+  tiene un piso: sin él, arrastrar un objeto hasta el cielo lo hace desaparecer, y el
+  tirador de redimensionar desaparece con él.
+- **Un objeto sobre un mostrador está más cerca del observador** de lo que sugiere su
+  altura en pantalla, porque la superficie del mostrador aparece más alta que el
+  suelo de abajo. La corrección depende de la profundidad que se quiere descubrir,
+  pero con perspectiva lineal es una ecuación de primer grado, resuelta de una vez,
+  sin aproximaciones sucesivas.
+
+Componer la escena se vuelve dato: se define dónde pisa el objeto y qué tan grande es,
+y el resto se deriva.
+
+## Dónde puede quedar un objeto
+
+La perspectiva resuelve el tamaño. Faltaba el lugar: un sorteo de coordenadas pone a
+una persona encima de un tejado y una botella dentro de la pared, porque el algoritmo
+no ve el dibujo, solo números.
+
+La respuesta es una **máscara de superficies**: una imagen de baja resolución, con un
+color por clase — dónde una persona está de pie, dónde se apoya un objeto, qué está
+prohibido. Lo predeterminado es **prohibido**. Equivocarse hacia el lado de rechazar
+es lo correcto: un área olvidada simplemente deja de sortearse, mientras que un área
+permitida por error se vuelve un objeto dentro de la pared.
+
+El sorteo es por rechazo. Elige un punto en el área permitida, arma el objeto allí
+con la perspectiva y prueba, en orden:
+
+- el **tamaño** mínimo dibujable y el **margen** hasta el borde del mapa;
+- la **línea de apoyo** sobre la misma clase de superficie. La línea es una curva de
+  Bézier cuadrática cuyos extremos arrastra el autor, y la recta es solo el caso en
+  que el control queda en el medio. Una forma calculada resolvía un tipo de objeto y
+  fallaba en los demás, porque la forma correcta depende de cómo se dibujó cada
+  figura;
+- el **cuerpo fuera del área prohibida**, comprobado con la **silueta** del dibujo,
+  medida en los píxeles opacos, y no con el rectángulo, cuyas esquinas transparentes
+  rechazarían buenas posiciones sin motivo;
+- la **distancia mínima** a los objetos ya colocados;
+- la **dificultad**, tratada más adelante.
+
+Las superficies de cada objeto son una lista **en orden de preferencia**, y la primera
+se agota antes que la segunda. Una versión anterior repartía la probabilidad entre las
+clases con una porción fija: la proporción era estable, pero proporción no es
+preferencia, y la mayoría de los objetos iba al suelo aunque hubiera mostrador libre.
+Los objetos entran del más grande al más pequeño, porque el grande tiene menos lugares
+donde cabe.
+
+Cuando se agotan los intentos, el objeto queda en la posición definida a mano. El peor
+caso es «esta partida repitió una posición», nunca «la partida no abre», y por eso
+posicionar a mano sigue valiendo la pena: es la red de seguridad de una máscara mal
+pintada.
+
+## Partidas reproducibles
+
+El sorteo usa un generador pseudoaleatorio con semilla, y no `Math.random`. En un
+juego terapéutico eso es un requisito: permite repetir una sesión, comparar dos y
+reproducir un reporte de error. La elección de las figuras pedidas usa una semilla
+**derivada** de la semilla de la colocación, para que tocar una no reordene la otra.
+
+## Dificultad como tercera capa
+
+El tamaño está atado a la perspectiva y el lugar a la máscara. La palanca de
+dificultad es otra: cuán **cargada** está la escena alrededor del objeto. Sobre arena
+lisa salta a la vista, y entre tejas y barriles desaparece.
+
+La medida es la desviación de la luminancia en una ventana alrededor del punto. La
+ventana es fija, y no del tamaño del objeto, porque lo que hace difícil la búsqueda es
+el desorden de la región que barre el ojo. Para que esto funcione dentro del sorteo,
+las sumas se guardan en **tablas acumuladas**: una partida llega a miles de intentos,
+y sin ellas cada uno recorrería la ventana entera. Con ellas, cualquier ventana cuesta
+cuatro lecturas por tabla.
+
+La partida **sube**: los primeros objetos pedidos caen en fondo limpio y los últimos en
+una región cargada. Empezar difícil es la forma más rápida de perder al jugador en la
+primera búsqueda, y en un juego guiado por la respiración la frustración inicial cuesta
+la sesión entera. La exigencia se relaja a medida que pasan los intentos, para que la
+dificultad nunca cueste una posición sorteada ni empuje al objeto hacia una superficie
+menos preferida: una dificultad aproximada vale más que una posición perdida.
+
+## Herramientas de autoría
+
+Un juego con decenas de figuras en una escena densa vive de contenido. Ajustar
+posiciones a mano solo revela el error después de recompilar, así que el proyecto
+incluye un **editor en el propio navegador**: arrastrar y redimensionar figuras, medir
+proporciones contra una regla, calibrar la perspectiva en dos pasos, pintar la máscara
+y sortear una partida de prueba, con semilla, para ver en qué clase aterrizó cada
+objeto y cuán difícil resultó.
+
+El orden del trabajo importa. Primero las **proporciones entre los objetos**, después
+la calibración: ella da la escala absoluta a un conjunto que ya debe ser coherente
+entre sí, y calibrar antes solo esparce el error por toda la escena.
+
+Un navegador no escribe en el disco del proyecto, así que un plugin de Vite lo hace,
+solo en desarrollo. Escribe tres archivos fijos, con rutas que no vienen de la
+solicitud, y valida cada campo antes de escribir. En producción el editor ni siquiera
+se monta. Otro plugin recorre las carpetas de figuras y publica el catálogo como
+módulo virtual: soltar un archivo en una carpeta lo hace aparecer en el juego y en el
+editor, sin registrar nada en código. Registrar cada figura en código era la fricción
+que impedía que el acervo creciera.
+
+## Canvas para la escena, React alrededor
+
+La escena se dibuja en Canvas, del fondo al frente, por el mismo punto de apoyo que
+define la escala. React se ocupa de lo que la rodea: HUD, menús y pantallas. El zoom y
+el desplazamiento del mapa viven en refs, y no en estado, porque el bucle de dibujo los
+lee en cada cuadro, y volver a renderizar en cada píxel de arrastre desperdiciaría
+trabajo.
+
+Dos detalles de imagen piden tratamientos opuestos. El mapa es mucho más grande que el
+área en que aparece, así que se remuestrea con calidad alta; si no, las líneas finas
+titilan. La máscara, en cambio, se decodifica con el suavizado **desactivado**: es
+dato, no imagen, y un píxel de frontera que se vuelve un color intermedio pertenecería
+a una clase que no existe.
+
+La entrada está pensada para el toque:
+
+- **Tocar o arrastrar** se decide por la distancia recorrida. Por debajo de un umbral,
+  es un intento de búsqueda; por encima, es arrastre y no gasta intento. Eso evita que
+  el temblor natural del dedo registre un error.
+- **El área de toque** acompaña el tamaño dibujado, con un margen proporcional y un
+  piso en píxeles, para que un objeto pequeño no quede imposible en el móvil.
+- **Solo la figura pedida cuenta como acierto.** El acervo entero está en el mapa, y el
+  resto es distracción: con solo las pedidas en una escena vacía, encontrarlas se
+  vuelve un barrido mecánico. Como lo que crece con el acervo es el número de
+  distracciones y no el de búsquedas, la partida no se alarga con cada figura nueva.
+- **En el modo de bajo estímulo, el filtro vale también para las figuras.** Sin eso
+  quedarían saturadas sobre un mapa suavizado y delatarían la respuesta.
+
+## Biofeedback y plataforma
+
+La capa de biofeedback viene del template de la línea de juegos terapéuticos de Self y
+se reutilizó. La variabilidad de la frecuencia cardíaca (RMSSD) se calcula en el
+navegador a partir de los intervalos entre latidos del sensor, vía Web Bluetooth — o se
+recibe del portal, cuando es él quien conecta el sensor —, se compara con una
+referencia de la calibración y se reduce a un nivel. El juego consume solo ese nivel, y
+es él quien devuelve los intentos. Sin sensor, un modo automático los devuelve por
+tiempo, para que el juego siga siendo utilizable.
+
+El juego corre embebido en el portal de la plataforma, que crea la sesión y transmite
+los datos mediante mensajes entre ventanas con el origen validado. Cambiar de juego
+fue cambiar la capa de juego, manteniendo la separación del template: servicios para la
+lógica, hooks como puente y componentes solo para orquestar y dibujar. Es esa capa de
+juego la que este texto describe.
+
+## Qué demuestra este proyecto
+
+Desde el punto de vista de la ingeniería, el interés aquí no es el género del juego.
+Es que dos exigencias opuestas — la escena debe parecer dibujada a mano, y las partidas
+deben ser variadas, justas y reproducibles — se redujeron a tres capas independientes
+(perspectiva, máscara y dificultad) y a herramientas que convierten la composición de
+escena en datos, con el peor caso degradando siempre a «la posición definida a mano», y
+nunca a «la partida no abre».
+
+El proyecto sigue en desarrollo.

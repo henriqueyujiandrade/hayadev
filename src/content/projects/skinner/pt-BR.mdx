@@ -1,0 +1,224 @@
+---
+title: Skinner
+description: Plataforma SaaS multi-tenant para clínicas de ABA, com API em NestJS, painel web em React e app de execução de sessões em React Native. Desenvolvida na Self.
+shortDescription: SaaS multi-tenant para clínicas de ABA, com API, painel web e app de sessões.
+projectType: saas
+status: active
+role: Desenvolvimento full stack da API, do painel web e do app
+technologies:
+  - TypeScript
+  - NestJS
+  - PostgreSQL
+  - TypeORM
+  - AWS Lambda
+  - React
+  - React Native
+  - Expo
+  - TanStack Query
+  - Zod
+  - Stripe
+year: 2026
+featured: true
+confidential: true
+caseStudy: true
+order: 5
+relatedArticles:
+  - idempotencia-endpoints
+---
+
+Clínicas que trabalham com ABA (Análise do Comportamento Aplicada) organizam o
+atendimento em torno de **protocolos**: conjuntos de tarefas que cada paciente
+treina ao longo de meses, em sessões curtas nas quais cada tentativa é
+registrada. Quem coordena desenha o plano, agenda e acompanha a evolução; quem
+aplica precisa abrir o dia e ver **apenas o que vai executar**.
+
+O Skinner é a plataforma que sustenta esse fluxo, desenvolvida na Self. O que
+segue são as decisões técnicas por trás dela.
+
+## Um motor de decisão, não um CRUD
+
+O valor do sistema está em responder sozinho a três perguntas: **o que este
+paciente precisa treinar hoje**, **o que aconteceu de fato na sessão** e **o que
+muda no plano por causa disso**. Isso empurra o desenho para longe de telas de
+cadastro: há um motor de decisão no centro, e cadastro, agenda e relatórios
+giram em torno dele.
+
+Três aplicações compõem o produto:
+
+| Aplicação        | Papel                                                               | Stack                                                  |
+| ---------------- | ------------------------------------------------------------------- | ------------------------------------------------------ |
+| API              | Domínio, regras e motor de decisão                                  | NestJS 11, TypeORM, PostgreSQL, AWS Lambda             |
+| Painel web       | Gestão: catálogo, protocolos, agenda, equipe, relatórios e cobrança | React 19, Vite, TanStack Router e Query, MUI, Tailwind |
+| App do aplicador | Executar a sessão, tentativa por tentativa                          | Expo e React Native: uma base para web, iOS e Android  |
+
+Os três são repositórios separados, sem importação cruzada. O contrato entre
+eles é a API, e a regra é uma só: **a lógica clínica vive apenas no servidor**.
+Os clientes registram o que aconteceu e exibem o que o servidor concluiu; nunca
+reimplementam a decisão.
+
+## Uma API em camadas, com o tenant no servidor
+
+A API é um monólito modular em NestJS com 24 módulos, todos com a mesma
+anatomia — controller, service, repository, entity — e DTOs na borda: uma
+entidade nunca é devolvida diretamente. Três decisões sustentam o isolamento
+entre clínicas:
+
+- **A organização é o tenant.** Os dados de negócio pertencem a uma organização
+  e toda consulta é escopada por ela. Um usuário pode pertencer a várias
+  organizações, então essa relação vive num vínculo, não no próprio usuário.
+- **O escopo vem do servidor, nunca do cliente.** A organização e o membro que
+  age saem do contexto autenticado ou do caminho da rota, jamais de um parâmetro
+  de query. Um recurso fora do escopo responde **404, não 403**: a existência
+  dele não pode vazar.
+- **Permissões vivem em código.** Um enum de permissões e um mapa por papel; um
+  membro pode acumular papéis e as permissões efetivas são a união. Como não
+  depende do banco, a regra é testável com objetos simples.
+
+A autenticação segue o mesmo cuidado. O access token dura pouco e vive só em
+memória no cliente; o refresh token **rotaciona a cada uso, com detecção de
+reuso** — um token já consumido que reaparece é lido como vazamento e derruba a
+linhagem inteira. O tipo de cliente fica gravado no token e vira amarra de
+transporte: cookie `httpOnly` no web, corpo da resposta e armazenamento seguro do
+sistema no mobile. Errar o par é 401. Há login por senha e por Google,
+verificação de e-mail e aceite de documentos legais (LGPD) que **bloqueia o
+acesso** enquanto houver pendência.
+
+## Sem cron, sem fila, sem worker
+
+A API roda em AWS Lambda, e essa restrição virou regra de desenho: **nenhum
+processo em segundo plano**. Cada operação do motor é síncrona, transacional e
+determinística. Se algo parece precisar de um agendador, é uma data calculada na
+leitura.
+
+Um exemplo: "vencido" nunca é um flag gravado, é uma comparação de datas
+avaliada quando alguém pergunta. Um flag gravado exigiria um job para mantê-lo em
+dia, e um job é justamente o que a arquitetura não tem. O atraso deixa de ser
+estado a sincronizar e passa a ser informação derivada.
+
+A agenda segue a mesma lógica. Ela usa o padrão dos aplicativos de calendário
+(RRULE, RFC 5545) em vez de colunas por dia da semana: a recorrência é um
+contrato, e as ocorrências são **virtuais**, expandidas sob demanda numa janela
+limitada. Só viram linha no banco quando desviam do padrão — uma falta, uma
+remarcação, uma troca de aplicador. E os dois motores são independentes de
+propósito: o de recorrência não sabe o que é ABA, e o clínico não sabe o que é
+calendário.
+
+A lógica de decisão — avaliar se um critério foi atingido, selecionar e ordenar o
+que entra na sessão do dia — fica em **funções puras, sem repositório**. Quem
+carrega e grava é outra camada. É a parte que a clínica discute e muda, então
+cada caso precisa poder ser exercitado com objetos simples, sem banco.
+
+## Operações que toleram repetição
+
+Toque duplo, rede instável, dois aparelhos: o cliente vai repetir requisições, e
+o servidor precisa convergir. Iniciar e finalizar uma sessão são idempotentes —
+repetir devolve o mesmo resultado, e o motor nunca roda duas vezes sobre a mesma
+sessão.
+
+O padrão adotado: **o índice único é a garantia; a consulta prévia é só o
+caminho rápido.** Duas requisições simultâneas passam pela consulta, as duas
+processam, e a segunda esbarra no índice do banco e desfaz a própria transação. A
+violação de unicidade é capturada e tratada como "já feito", nunca como erro 500.
+O PostgreSQL serializa a disputa; uma leitura seguida de uma decisão não
+serializaria.
+
+## O dia civil não é UTC
+
+Quase tudo no domínio é "por dia": quando uma revisão vence, a que dia uma sessão
+pertence, qual dia o plano cobre. Um dia em UTC não é o dia da clínica — a partir
+das 21h em São Paulo já é amanhã em UTC — e a aritmética feita em UTC erra a data
+sem avisar.
+
+A solução foi mudar a representação: um dia é uma **string `AAAA-MM-DD` resolvida
+no fuso da organização**, nunca um `Date`. Um `Date` é um instante, e um instante
+só vira dia quando um fuso o nomeia.
+
+```ts
+// Um dia civil é resolvido num fuso, nunca extraído do instante em UTC.
+function calendarDay(instant: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone }).format(instant);
+}
+
+const at = new Date('2026-03-15T00:30:00Z');
+
+at.toISOString().slice(0, 10); // '2026-03-15' — o dia em UTC
+calendarDay(at, 'America/Sao_Paulo'); // '2026-03-14' — o dia da clínica
+```
+
+## Histórico que não se reescreve
+
+O dado clínico é o produto, e o desenho privilegia o registro:
+
+- toda mudança de estado de uma tarefa grava um evento — de onde, para onde, por
+  quê e por quem. Não há mudança silenciosa;
+- resultados de sessão e eventos são somente de inserção;
+- o plano que o sistema sugeriu no início da sessão é congelado como um
+  instantâneo, ao lado do que de fato aconteceu. A diferença entre os dois é
+  informação, não erro;
+- as configurações que valem para uma tarefa são resolvidas e gravadas junto do
+  resultado, então uma sessão passada nunca é reavaliada por uma regra que não
+  existia quando ela ocorreu.
+
+## Dois frontends, as mesmas regras
+
+O painel e o app compartilham a arquitetura, sem compartilhar código:
+
+- **Feature-first.** Cada domínio é um módulo isolado — API, hooks, componentes,
+  schemas, tipos — que precisa poder ser lido, revisado e apagado sozinho. São 17
+  módulos no painel e 4 no app.
+- **Fluxo em uma direção**: rota, tela, componentes, hook, API. Componente não
+  chama a API, hook não monta URL, e a camada de API não conhece React nem
+  tradução.
+- **O lint impõe, a revisão não precisa lembrar.** Importar o caminho interno de
+  outro módulo, usar o cliente HTTP fora da camada de API ou deixar `shared/`
+  depender de `features/` reprova o lint. No painel, o mesmo vale para cor e
+  tamanho de fonte fora da escala do design system.
+- **Ciclos de import.** O plugin de ESLint para isso não suporta a versão do
+  ESLint do painel, e o fork que o substitui instalava, rodava e não detectava
+  nada. Regra que nunca dispara é pior que regra nenhuma, porque parece proteção.
+  Um script próprio percorre o grafo de imports e falha o lint; separar as
+  páginas da API pública dos módulos levou o painel de um ciclo de 41 arquivos
+  para zero.
+- **Zod em toda resposta.** Com repositórios separados, uma mudança de contrato
+  não vira erro de compilação, vira dado errado em produção. Validar na borda faz
+  o erro aparecer alto e no lugar certo.
+- **Estado na URL.** A clínica ativa, a busca e a página vivem na URL, não num
+  estado escondido: duas abas podem estar em clínicas diferentes, um link leva ao
+  lugar exato e recarregar não perde o contexto.
+
+O app de execução é o oposto do painel: quase nenhuma gestão, uma tarefa só, bem
+feita. A mesma base serve web, iOS e Android — por ora, o web é o alvo de
+validação —, com cache de consultas persistido, retorno tátil e tela que não
+apaga durante a sessão. Uma decisão que aparece ali: **escritas clínicas não usam
+atualização otimista.** Mostrar um toque que o servidor não recebeu é pior que
+esperar — o aplicador seguiria a sessão acreditando num registro que não existe.
+Erro silencioso é pior que espera visível.
+
+## Qualidade e operação
+
+- **Testes.** 1.253 testes unitários em 75 arquivos, com as dependências
+  mockadas e sem tocar o banco, e uma suíte e2e de 24 arquivos que sobe a
+  aplicação de verdade contra um PostgreSQL local. A e2e **recusa-se a rodar
+  contra qualquer host que não seja local**: ela recria o schema a cada execução,
+  e apontá-la para um banco remoto seria destrutivo.
+- **Schema só por migration** — 51 até aqui, nunca `synchronize`. Uma migration
+  aplicada em produção é imutável; a correção é uma migration nova. Local, dev e
+  produção têm configuração e bancos separados, e o padrão é sempre o local, para
+  que um `migration:generate` distraído nunca compare as entidades com um banco
+  remoto. Na publicação, migration primeiro, código depois.
+- **Cobrança com Stripe** — checkout, portal do cliente e troca de plano — e modo
+  somente leitura quando a assinatura não está ativa: as leituras continuam, as
+  escritas são recusadas, e o cliente esconde a ação em vez de deixar o 403
+  aparecer no meio do fluxo.
+- **Infraestrutura na AWS**: Lambda com Serverless Framework, e-mail
+  transacional via SES e upload de imagens no S3 por URL pré-assinada.
+
+## O que este projeto demonstra
+
+Do ponto de vista de engenharia, o interesse aqui não é o domínio clínico. É como
+um conjunto de regras que a clínica discute e muda foi isolado num núcleo
+pequeno, determinístico e testável, cercado por uma API que não confia no
+cliente, por operações que toleram repetição e por dois frontends que falham alto
+quando o contrato muda.
+
+O projeto segue em desenvolvimento.

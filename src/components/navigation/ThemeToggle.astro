@@ -1,0 +1,118 @@
+---
+import { Moon, Sun } from '@lucide/astro';
+import type { Locale } from '@config/locales';
+import { useTranslations } from '@i18n/index';
+
+interface Props {
+  locale: Locale;
+  class?: string;
+}
+
+const { locale, class: className = '' } = Astro.props;
+const t = useTranslations(locale);
+---
+
+{/*
+  A theme toggle is ~20 lines of DOM work, so it stays vanilla. Making it a
+  React island would ship the React runtime on every page of the site to serve
+  one button — the wrong trade for a control this small.
+
+  Which icon shows is decided in CSS from the same two sources the palette uses,
+  so the button is correct on first paint, before this script runs.
+*/}
+<button
+  type="button"
+  data-theme-toggle
+  data-label-light={t.theme.toLight}
+  data-label-dark={t.theme.toDark}
+  aria-label={t.theme.label}
+  class:list={[
+    'inline-grid size-9 place-items-center rounded-md border border-border-control bg-surface',
+    'text-ink-muted transition-colors hover:border-border-strong hover:text-ink',
+    className,
+  ]}
+>
+  <Sun class="theme-icon-sun size-4" aria-hidden="true" />
+  <Moon class="theme-icon-moon size-4" aria-hidden="true" />
+</button>
+
+<style is:global>
+  /* Default (light): offer the moon. */
+  .theme-icon-sun {
+    display: none;
+  }
+
+  .theme-icon-moon {
+    display: block;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) .theme-icon-sun {
+      display: block;
+    }
+
+    :root:not([data-theme='light']) .theme-icon-moon {
+      display: none;
+    }
+  }
+
+  :root[data-theme='dark'] .theme-icon-sun {
+    display: block;
+  }
+
+  :root[data-theme='dark'] .theme-icon-moon {
+    display: none;
+  }
+
+  :root[data-theme='light'] .theme-icon-sun {
+    display: none;
+  }
+
+  :root[data-theme='light'] .theme-icon-moon {
+    display: block;
+  }
+</style>
+
+<script>
+  import { THEME_STORAGE_KEY, type Theme } from '@config/theme';
+
+  const root = document.documentElement;
+  const media = window.matchMedia('(prefers-color-scheme: dark)');
+
+  /** The theme currently painted, whether it came from a choice or the OS. */
+  function resolvedTheme(): Theme {
+    const explicit = root.dataset.theme;
+    if (explicit === 'light' || explicit === 'dark') return explicit;
+    return media.matches ? 'dark' : 'light';
+  }
+
+  /** Names the action the button performs, not the state it is in. */
+  function syncLabel(button: HTMLElement): void {
+    const next = resolvedTheme() === 'dark' ? 'light' : 'dark';
+    const label = next === 'light' ? button.dataset.labelLight : button.dataset.labelDark;
+    if (label) button.setAttribute('aria-label', label);
+  }
+
+  const buttons = document.querySelectorAll<HTMLButtonElement>('[data-theme-toggle]');
+
+  for (const button of buttons) {
+    syncLabel(button);
+
+    button.addEventListener('click', () => {
+      const next: Theme = resolvedTheme() === 'dark' ? 'light' : 'dark';
+      root.dataset.theme = next;
+      try {
+        localStorage.setItem(THEME_STORAGE_KEY, next);
+      } catch {
+        /* Storage unavailable: the choice applies to this page view only. */
+      }
+      for (const other of buttons) syncLabel(other);
+    });
+  }
+
+  /* Track the OS while no explicit choice has been made. */
+  media.addEventListener('change', () => {
+    if (root.dataset.theme) return;
+    for (const button of buttons) syncLabel(button);
+  });
+</script>

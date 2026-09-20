@@ -1,0 +1,128 @@
+---
+title: Zendino
+description: A breathing biofeedback game for children, in React and Canvas, where a tree guides the breathing and a dinosaur reacts to the heart rate. Built at Self.
+shortDescription: A breathing biofeedback game for children, with a heart-rate sensor.
+projectType: game
+status: completed
+role: Development of the game
+technologies:
+  - TypeScript
+  - React
+  - Canvas
+  - Vite
+  - Web Bluetooth
+  - Styled Components
+year: 2026
+featured: true
+confidential: true
+caseStudy: true
+order: 20
+---
+
+**Zendino** is a breathing biofeedback game for children. The player breathes at
+the pace the animation sets, and an optional heart-rate sensor measures heartbeat
+variability: a dinosaur reacts to the quality of the breathing, from sad to
+satisfied. It was built at Self and runs in the browser, embedded in the platform's
+portal.
+
+What follows are the technical decisions behind it.
+
+## A guide that is part of the scenery
+
+The game has two modes, and in both the breathing guide is the scenery itself. In
+the **main mode**, a tree grows while the child inhales, shrinks while they exhale
+and stays still during pauses. In the **alternative mode**, the dinosaur breathes
+in a loop, the trees sway and a stream of air leaves its nose or mouth.
+
+Underneath, the tree is a small state machine — growing, full pause, shrinking,
+empty pause — and its scale follows a smoothed curve, not a linear one, so the
+motion does not look mechanical. The HUD's breathing indicator is not computed in
+parallel: it reads the state of the guide itself, so the two cannot diverge.
+
+## A reward that does not punish
+
+The dinosaur's emotion is the reward channel. The logic that decides it is made of
+pure functions, with no drawing code inside. With a sensor, it starts from the
+measured breathing level, and a **difficulty policy** decides how far the emotion
+can go back:
+
+```ts
+type Policy = 'easy' | 'medium' | 'hard';
+type Reading = { measured: number; current: number; wellBelowBaseline: boolean };
+
+// Given the reading, when the dinosaur's emotion can change.
+function nextLevel(policy: Policy, r: Reading) {
+  if (policy === 'hard') return r.measured; // follows the measurement
+  if (policy === 'easy') return Math.max(r.measured, r.current); // never drops
+  if (r.measured >= r.current) return r.measured; // medium: moves up freely
+  return r.wellBelowBaseline ? r.measured : r.current; // drops only with margin
+}
+```
+
+In easy mode, bad breathing never makes the dinosaur worse. In medium, it moves
+forward freely and only steps back when the measurement falls well below the
+calibration reference, which keeps it from oscillating on every momentary dip. In
+hard, it follows the measurement.
+
+**Without a sensor, the game is not left without a reward.** A schedule moves the
+emotion forward with the session's progress. It is indexed by the **absolute**
+position in the session, not by the time remaining, so falling into automatic mode
+halfway through a match does not start over from zero. And there is a **floor**: if
+the sensor fails with the dinosaur already happy, the schedule would say "sad", and
+the child would be punished for a hardware failure. The floor holds on to what they
+already earned. The same logic applies when the signal is lost for too long or the
+connection drops: the session goes on, in automatic mode.
+
+## Transitions without jumps
+
+In a game meant to calm, an abrupt change of image draws attention to itself. So
+almost nothing changes immediately:
+
+- a new emotion stays **pending** until the current animation reaches frame zero,
+  and is discarded if the measurement goes back to the previous value before then;
+- at the end of the session, the dinosaur completes the cycle in progress and stops
+  at frame zero, and the tree settles at the zoom midpoint, detected by crossing it
+  in either direction, before the final animation begins;
+- a pause freezes the scene instead of erasing it, and on resume the loop's clock
+  is reset, so the time spent stopped does not turn into a jump.
+
+## Canvas at a fixed resolution
+
+All the drawing happens on a canvas with a fixed logical resolution, scaled to the
+window by a transform, with the aspect ratio kept and the whole thing centered. That
+way, positions, sizes and offsets live in a single coordinate system, and the game
+does not recompute layout for every screen size.
+
+The draw loop lives outside React's lifecycle and reads state through refs, and the
+breathing indicator follows the same path: the loop writes the guide's state to a
+shared ref, and the indicator, with its own loop, changes the element's style
+directly in the DOM. The fill, updated every frame, does not go through React
+state, so it costs no re-renders. Each game state — pre-game, playing, paused, end —
+has its own drawing branch. Background layers that use a filter are pre-rendered
+into an `OffscreenCanvas` and only redone when the size changes, and the air stream
+of the alternative mode is a fixed set of particles with a signed phase: the sign
+says whether they converge on the origin, when inhaling, or move away from it, when
+exhaling.
+
+## A tutorial built with the game itself
+
+The tutorial is not a separate animation. It mounts the same dinosaur, the same
+trees, the same background and the same particles as the game, driven by steps.
+Since it is the same drawing code, what the tutorial shows is what the game does.
+
+## Biofeedback and platform
+
+The biofeedback layer comes from the template for Self's therapeutic games and was
+reused. Heart-rate variability (RMSSD) is computed in the browser from the
+intervals between the sensor's heartbeats, over Web Bluetooth, compared against a
+reference from the calibration and reduced to a level, the same one that feeds the
+dinosaur's emotion. The sensor is optional. The game runs embedded in the
+platform's portal, which creates the session and receives the match result. It is
+the game layer that this text describes.
+
+## What this project demonstrates
+
+From an engineering standpoint, the interest here is not the dinosaur. It is that a
+child's experience — a reward that does not punish, transitions without jumps, a
+sensor that can fail — was translated into small rules, isolated from the drawing,
+on top of a simple and predictable rendering loop.

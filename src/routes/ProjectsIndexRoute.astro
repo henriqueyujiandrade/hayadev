@@ -1,0 +1,100 @@
+---
+import ProjectCard from '@components/projects/ProjectCard.astro';
+import ProjectFilters from '@components/projects/ProjectFilters.tsx';
+import { projectGridClass } from '@components/projects/grid';
+import Container from '@components/ui/Container.astro';
+import { ALL_FACET } from '@components/ui/filterable';
+import type { Locale } from '@config/locales';
+import { PROJECT_FILTERS } from '@config/taxonomy';
+import PageLayout from '@layouts/PageLayout.astro';
+import { useTranslations } from '@i18n/index';
+import { getPortfolioProjects } from '@utils/content';
+import { homePath, localizedPath } from '@utils/routes';
+import { buildAlternates, defaultOgImage, formatTitle, pathsForAllLocales } from '@utils/seo';
+import { breadcrumbSchema, graph, personSchema, type BreadcrumbItem } from '@utils/structured-data';
+import { absoluteUrl } from '@utils/url';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const t = useTranslations(locale);
+
+const projects = await getPortfolioProjects(locale);
+
+/*
+ * Only facets that actually match something are offered. A filter that leads
+ * nowhere is worse than no filter at all.
+ */
+const options = PROJECT_FILTERS.map((facet) => ({
+  id: facet,
+  label: facet === ALL_FACET ? t.projects.filterAll : t.projectTypes[facet],
+  count:
+    facet === ALL_FACET
+      ? projects.length
+      : projects.filter((project) => project.data.projectType === facet).length,
+})).filter((option) => option.id === ALL_FACET || option.count > 0);
+
+const path = localizedPath('projects', locale);
+const alternatePaths = pathsForAllLocales((target) => localizedPath('projects', target));
+const { alternates, xDefault } = buildAlternates(alternatePaths);
+
+const seo = {
+  title: formatTitle(t.projects.title),
+  description: t.projects.metaDescription,
+  canonical: absoluteUrl(path),
+  alternates,
+  xDefault,
+  ogType: 'website' as const,
+  ogImage: defaultOgImage(),
+  ogImageAlt: t.projects.title,
+  noindex: false,
+};
+
+const breadcrumbs: BreadcrumbItem[] = [
+  { name: t.nav.home, path: homePath(locale) },
+  { name: t.projects.title, path },
+];
+
+const jsonLd = graph([personSchema(locale), breadcrumbSchema(breadcrumbs)]);
+---
+
+<PageLayout
+  locale={locale}
+  seo={seo}
+  jsonLd={jsonLd}
+  alternatePaths={alternatePaths}
+  title={t.projects.title}
+  lead={t.projects.lead}
+  eyebrow={t.nav.projects}
+  breadcrumbs={breadcrumbs}
+>
+  <Container class="pt-10 pb-section">
+    {projects.length === 0 ? (
+      <div class="flex max-w-measure flex-col gap-2 rounded-xl border border-border bg-surface-muted/50 p-8">
+        <p class="font-medium text-ink">{t.projects.empty}</p>
+        <p class="text-ink-muted">{t.projects.emptyLead}</p>
+      </div>
+    ) : (
+      /*
+          The island is hydrated when the browser goes idle: the grid is already
+          painted from the server-rendered HTML, so hydration only has to arrive
+          before the visitor reaches for a filter, not before they can read.
+        */
+      <ProjectFilters
+        client:idle
+        options={options}
+        groupLabel={t.projects.filterLabel}
+        noResultsLabel={t.projects.noResults}
+        gridClassName={projectGridClass(projects.length)}
+      >
+        {projects.map((project) => (
+          <div data-filterable data-facet={project.data.projectType}>
+            <ProjectCard project={project} locale={locale} headingLevel="h2" />
+          </div>
+        ))}
+      </ProjectFilters>
+    )}
+  </Container>
+</PageLayout>

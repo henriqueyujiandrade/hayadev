@@ -1,0 +1,157 @@
+---
+import ButtonLink from '@components/ui/ButtonLink.astro';
+import Container from '@components/ui/Container.astro';
+import { HTML_LANG, LOCALES, LOCALE_PREFIX, type Locale } from '@config/locales';
+import BaseLayout from '@layouts/BaseLayout.astro';
+import { useTranslations } from '@i18n/index';
+import { homePath, localizedPath, notFoundPath } from '@utils/routes';
+import { defaultOgImage, formatTitle } from '@utils/seo';
+import { absoluteUrl } from '@utils/url';
+
+interface Props {
+  locale: Locale;
+  /**
+   * Set on the root 404 only.
+   *
+   * A static Vercel deployment serves a single `404.html` for every missing
+   * path, so the root page also has to answer for `/en/...` and `/es/...`.
+   * With this on, the page ships all three translations and picks the one
+   * matching the failed path on load. Without JavaScript it stays in the
+   * default locale, which is a correct page rather than a broken one.
+   */
+  adaptive?: boolean;
+}
+
+const { locale, adaptive = false } = Astro.props;
+const t = useTranslations(locale);
+
+/* Error pages are `noindex` and publish no hreflang set: they are not content. */
+const seo = {
+  title: formatTitle(t.notFound.title),
+  description: t.notFound.lead,
+  canonical: absoluteUrl(notFoundPath(locale)),
+  alternates: [],
+  ogType: 'website' as const,
+  ogImage: defaultOgImage(),
+  ogImageAlt: t.notFound.title,
+  noindex: true,
+};
+
+const buildContent = (target: Locale) => {
+  const dictionary = useTranslations(target);
+  return {
+    lang: HTML_LANG[target],
+    title: formatTitle(dictionary.notFound.title),
+    heading: dictionary.notFound.heading,
+    lead: dictionary.notFound.lead,
+    links: [
+      { href: homePath(target), label: dictionary.notFound.goHome },
+      { href: localizedPath('projects', target), label: dictionary.notFound.goProjects },
+      { href: localizedPath('articles', target), label: dictionary.notFound.goArticles },
+    ],
+  };
+};
+
+const content = buildContent(locale);
+
+/*
+ * Keyed by URL prefix rather than locale code, because the lookup happens
+ * against `location.pathname`. The default locale has no prefix and is already
+ * what the page renders, so it is not included.
+ */
+const translations = adaptive
+  ? Object.fromEntries(
+      LOCALES.filter((target) => LOCALE_PREFIX[target] !== '').map((target) => [
+        LOCALE_PREFIX[target],
+        buildContent(target),
+      ]),
+    )
+  : undefined;
+---
+
+<BaseLayout locale={locale} seo={seo}>
+  <Container class="flex min-h-[60vh] flex-col justify-center py-section">
+    <div class="flex max-w-measure flex-col gap-6">
+      <p class="font-mono text-micro tracking-[0.12em] text-accent uppercase">404</p>
+      <h1 class="font-serif text-h1 text-ink" data-nf="heading">
+        {content.heading}
+      </h1>
+      <p class="text-lead text-ink-muted" data-nf="lead">
+        {content.lead}
+      </p>
+
+      <div class="mt-2 flex flex-wrap gap-3">
+        {content.links.map((link, index) => (
+          <ButtonLink href={link.href} variant={index === 0 ? 'primary' : 'secondary'}>
+            <span data-nf-link={index}>{link.label}</span>
+          </ButtonLink>
+        ))}
+      </div>
+    </div>
+  </Container>
+
+  {
+    /*
+      Locale adaptation for the site-wide 404.
+
+      The payload travels as a JSON data block and the logic as an ordinary
+      bundled script, rather than one inline script carrying both. An inline
+      script here is rejected by the Content-Security-Policy: Astro hashes the
+      inline scripts it emits, but not one rendered conditionally on a single
+      page, so the browser blocks it. A `type="application/json"` block is not
+      executable and is not subject to `script-src`, and the bundled module is
+      served from the origin, which `script-src 'self'` already allows.
+    */
+    adaptive && translations && (
+      <script
+        type="application/json"
+        data-not-found-translations
+        is:inline
+        set:html={JSON.stringify(translations).replace(/</g, '\\u003c')}
+      ></script>
+    )
+  }
+</BaseLayout>
+
+<script>
+  /*
+   * Rewrites the site-wide 404 into the language of the path that was missed.
+   * A static Vercel deployment serves one `404.html` for every missing URL, so
+   * this page also has to answer for `/en/…` and `/es/…`. Without JavaScript it
+   * stays in the default locale, which is a correct page rather than a broken
+   * one, so nothing here is load-bearing.
+   */
+  interface NotFoundContent {
+    lang: string;
+    title: string;
+    heading: string;
+    lead: string;
+    links: Array<{ href: string; label: string }>;
+  }
+
+  const payload = document.querySelector('[data-not-found-translations]');
+
+  if (payload?.textContent) {
+    const translations = JSON.parse(payload.textContent) as Record<string, NotFoundContent>;
+    const segment = window.location.pathname.split('/').filter(Boolean)[0];
+    const content = segment ? translations[segment] : undefined;
+
+    if (content) {
+      document.documentElement.lang = content.lang;
+      document.title = content.title;
+
+      const heading = document.querySelector('[data-nf="heading"]');
+      if (heading) heading.textContent = content.heading;
+
+      const lead = document.querySelector('[data-nf="lead"]');
+      if (lead) lead.textContent = content.lead;
+
+      content.links.forEach((link, index) => {
+        const label = document.querySelector(`[data-nf-link="${index}"]`);
+        if (!label) return;
+        label.textContent = link.label;
+        label.closest('a')?.setAttribute('href', link.href);
+      });
+    }
+  }
+</script>

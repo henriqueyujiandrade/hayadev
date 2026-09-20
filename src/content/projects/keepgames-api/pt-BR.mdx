@@ -1,0 +1,190 @@
+---
+title: KeepGames API
+description: API multi-tenant de uma plataforma SaaS de jogos terapêuticos com biofeedback, em NestJS e PostgreSQL, do modelo de dados à cobrança. Desenvolvida na Self.
+shortDescription: API multi-tenant de jogos terapêuticos com biofeedback, em NestJS e PostgreSQL.
+projectType: api
+status: active
+role: Desenvolvimento da API e do modelo de dados
+technologies:
+  - TypeScript
+  - NestJS
+  - PostgreSQL
+  - TypeORM
+  - AWS Lambda
+  - Stripe
+year: 2026
+featured: false
+confidential: true
+caseStudy: true
+order: 7
+---
+
+A **KeepGames API** é o backend de uma plataforma SaaS de jogos terapêuticos com
+biofeedback, usada por clínicas, profissionais autônomos e famílias. Ela cria as
+sessões de jogo, recebe a telemetria de cada partida — inclusive o sinal bruto de
+frequência cardíaca —, gerencia pacientes, equipes, formulários e assinaturas, e é
+consumida pelo portal e pelos jogos. Substitui um sistema legado e foi desenvolvida
+na Self, do modelo de dados à publicação.
+
+A base — a organização como tenant, permissões em código, migrations como única
+forma de mudar o schema — é a mesma descrita no projeto Skinner e não se repete
+aqui. O que segue é o que é específico desta API.
+
+## Jogos são clientes em que não se confia
+
+Os jogos rodam embutidos no portal e nunca devem ter as credenciais do usuário. Por
+isso o app cria uma **sessão de jogo**, e o servidor gera uma chave efêmera ligada a
+um paciente, a um jogo e a quem aplica. A chave é guardada **só como hash** e
+mostrada **uma única vez**: o jogo a troca pelo contexto da sessão e a usa para
+enviar a telemetria. Os dois públicos — o app, autenticado com o token do usuário, e
+o jogo, autenticado com a chave — ficam em **zonas de confiança separadas**, com
+guards diferentes e nunca no mesmo controller.
+
+A outra metade da regra: **nada que identifique escopo vem do jogo.** Organização,
+paciente, aplicador, jogo e plataforma são sempre lidos da sessão, e os corpos das
+requisições nem têm campos para isso, porque a validação estrita recusa o que for
+desconhecido. Um jogo só consegue ler e escrever o que pertence à sessão em que está.
+
+Uma decisão tomada de propósito: a assinatura é conferida quando a sessão é criada, e
+não a cada mensagem. Uma sessão válida não é interrompida no meio se a organização
+cair para somente leitura, porque cortar a partida de uma criança seria pior do que
+essa folga.
+
+## Um modelo de dados para telemetria clínica
+
+Cada partida vira um **fato imutável**, e o desenho gira em torno disso:
+
+- **Cópias que não divergem.** A partida guarda cópias da organização, do paciente,
+  do jogo e do aplicador, gravadas pelo servidor a partir da sessão. Desnormalizar
+  costuma custar divergência, mas aqui a linha nunca muda, então as cópias não têm
+  como se afastar da origem. Consultar a evolução de um paciente entre jogos e
+  sessões vira uma leitura de uma tabela só, sem junção.
+- **O sinal bruto mora à parte.** Ele fica numa tabela própria, 1:1 com a partida,
+  que só existe quando houve sensor — e é a maior do sistema. As estatísticas rodam
+  nos números-resumo da tabela de fatos, nunca varrendo o JSON, e as listagens nunca
+  carregam o sinal.
+- **Fato, não ponteiro.** A partida registra _quem aplicou_. Copiar quem é o
+  responsável pelo paciente congelaria um retrato que envelhece, porque o responsável
+  muda, e ele continua alcançável pelo paciente.
+- **Numeração e atomicidade.** O número da partida é atribuído pelo servidor, nunca
+  aceito do cliente, e a partida e o sinal são gravados numa única transação.
+- **Um par de tabelas para todos os jogos.** O sistema anterior criava uma tabela
+  por jogo. Aqui, o que é comum é coluna tipada, e o que é específico de cada jogo
+  fica em JSON.
+- **Nada se apaga.** Partidas, medições de variabilidade cardíaca e respostas de
+  formulário não têm rota de exclusão: são registro clínico.
+
+## Tipado onde o vocabulário é fechado, livre onde é aberto
+
+O perfil de acessibilidade de um paciente é um conjunto pequeno e estável, então usa
+**colunas tipadas**, e acrescentar um campo exige uma migration, um custo
+intencional. Já a configuração de cada jogo é **JSON livre**, porque cada jogo é dono
+dos seus campos, com poucos guarda-corpos: tamanho, profundidade e chaves reservadas
+do JavaScript recusadas. As duas ficam em tabelas separadas, para que um jogo que
+grave lixo no próprio JSON nunca corrompa o perfil validado.
+
+- **A chave é uma tupla completa**, sem coluna anulável: profissional, paciente, jogo
+  e plataforma. Além de dizer exatamente o que a sessão carrega, isso evita a
+  armadilha do PostgreSQL em que NULLs são distintos num índice único, e a mesma
+  linha lógica pode entrar duas vezes.
+- **Leitura nunca escreve.** A linha só existe depois da primeira escrita. Sem ela, a
+  API devolve um perfil padrão que vive em código, e um teste amarra essa constante
+  aos defaults das colunas, para as duas não divergirem.
+- **A configuração de um jogo só é escrita de dentro do jogo.** Não existe rota do
+  app para isso, então "o app apagou a configuração de todos os jogos" é impossível
+  por construção. Ela é devolvida separada do perfil de acessibilidade, sem mesclar, e
+  quem aplica a precedência é o cliente.
+
+## Formulários versionados
+
+Os formulários da plataforma são montados por um editor e respondidos dentro do
+sistema, e o modelo gira em torno de uma invariante: **uma versão publicada é
+imutável.**
+
+- Um rascunho é livremente editável. Publicar arquiva a versão anterior **primeiro**,
+  na mesma transação, para que o índice único parcial — no máximo uma versão publicada
+  por formulário — nunca veja duas. Mudar uma pergunta é clonar para um novo
+  rascunho.
+- Cada resposta aponta para **a versão exata que foi exibida**. As perguntas têm um
+  código estável entre versões, então clonar é copiar linhas, sem remapear ids, e a
+  análise entre versões vira um agrupamento por código. Respostas de múltipla escolha
+  guardam o valor estável da opção, e não o rótulo, para o texto poder ser reescrito
+  sem quebrar a série histórica.
+- **O cliente desenha, mas nunca decide o que é válido.** A exibição condicional é
+  uma regra em JSON que o cliente avalia para renderizar e que o servidor reavalia ao
+  receber: respostas a perguntas ocultas são **descartadas**, e não recusadas, porque
+  uma regra pode ter escondido a pergunta depois de a pessoa digitar nela. Como cada
+  regra só pode citar perguntas anteriores, uma passada resolve tudo, sem iterar até um
+  ponto fixo, e o validador é uma função pura, sem banco.
+- O **ciclo semanal** de formulários deriva o próprio tamanho, exige semanas
+  contíguas para ser publicado e tem a data de início como dado, alterável sem deploy.
+  O registro de entregas é só de inserção, sem índice único de propósito, e leitura e
+  escrita são rotas separadas.
+
+## Cobrança: o gateway é a verdade, a API decide o acesso
+
+A assinatura local é um espelho do gateway de pagamento, e algumas decisões
+garantem que ela nunca conceda acesso por engano:
+
+```ts
+const DAY = 86_400_000;
+type Period = { endsAt: Date; graceDays: number };
+
+// O status cru do gateway é só auditoria: o acesso é decidido neste mapa.
+function accessFor(raw: string, period: Period, now = new Date()) {
+  switch (raw) {
+    case 'trialing':
+    case 'active':
+      return 'full';
+    case 'past_due': {
+      // a carência é calculada na leitura, sem agendador
+      const graceEnds = period.endsAt.getTime() + period.graceDays * DAY;
+      return now.getTime() <= graceEnds ? 'full' : 'read_only';
+    }
+    default: // cancelada, não paga ou desconhecida: nunca abre acesso
+      return 'read_only';
+  }
+}
+```
+
+- **O status cru é auditoria.** Ele é guardado como veio, mas nenhum outro ponto do
+  código decide com base nele: um único mapa o traduz para o estado interno, e um
+  status desconhecido cai em somente leitura, nunca em acesso.
+- **O plano vem do preço da assinatura, não do metadata.** O metadata é um retrato do
+  checkout: quando o cliente troca de plano pelo portal, o preço muda e o metadata
+  não, e os limites ficariam errados.
+- **Um só caminho de escrita.** Eventos do gateway, concessões manuais e a
+  reconciliação manual passam pelo mesmo upsert atômico e idempotente, então uma
+  concessão manual não abre nenhum caminho de acesso especial. A revogação só vale
+  para concessões manuais: revogar uma assinatura que o gateway continua cobrando
+  geraria um cliente que paga e não tem acesso.
+- **O índice único, de propósito, não é parcial.** Existe no máximo uma linha por
+  organização, para sempre, e o upsert sempre desfaz a exclusão lógica: escrever a
+  linha é também "desrevogá-la". Sem isso, o `ON CONFLICT DO UPDATE` atualizaria
+  tudo e deixaria a linha excluída, com a organização presa em somente leitura mesmo
+  depois de pagar.
+- **A troca de plano é validada aqui**, porque o portal hospedado não sabe se o plano
+  de destino serve ao tipo da organização nem se o uso atual cabe nele. A lista de
+  planos trocáveis do portal é gerada a partir do catálogo próprio, e a geração
+  recusa uma lista vazia, que desligaria toda troca.
+- **A reconciliação falha alto.** Ao puxar a assinatura direto do gateway, duas
+  assinaturas vivas para a mesma organização viram um conflito mostrado a uma pessoa,
+  e não uma escolha silenciosa. O resultado da busca ainda é reconferido contra a
+  organização, porque a busca do gateway é eventualmente consistente.
+
+## Qualidade e operação
+
+São 18 módulos, 33 migrations e 999 testes unitários em 52 arquivos, com as
+dependências mockadas e sem banco, mais 20 arquivos e2e que sobem a aplicação de
+verdade contra um PostgreSQL local. Ambientes, migrations e publicação seguem as
+regras do Skinner: o schema só muda por migration, nunca por `synchronize`, e a API
+roda em AWS Lambda.
+
+## O que este projeto demonstra
+
+Do ponto de vista de engenharia, o interesse aqui é o modelo: onde a verdade mora —
+fatos imutáveis, com cópias seguras porque não mudam —, quem pode dizer o quê — o
+cliente nunca informa escopo — e o que fazer quando um sistema externo discorda do
+seu: falhar alto, e nunca escolher em silêncio.
+
+O projeto segue em desenvolvimento.

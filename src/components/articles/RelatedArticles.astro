@@ -1,0 +1,54 @@
+---
+import type { Locale } from '@config/locales';
+import { interpolate, useTranslations } from '@i18n/index';
+import type { LocalizedArticle } from '@utils/content';
+import { formatDate, toISODate } from '@utils/date';
+import { localizedPath } from '@utils/routes';
+
+interface Props {
+  articles: readonly LocalizedArticle[];
+  locale: Locale;
+  title: string;
+}
+
+const { articles, locale, title } = Astro.props;
+const t = useTranslations(locale);
+---
+
+{articles.length > 0 && (
+  <section aria-labelledby="related-articles-heading" class="flex flex-col gap-5">
+    <h2
+      id="related-articles-heading"
+      class="font-mono text-micro tracking-[0.12em] text-ink-subtle uppercase"
+    >
+      {title}
+    </h2>
+
+    <ul class="grid gap-4 sm:grid-cols-2">
+      {articles.map((article) => (
+        <li class="group relative flex flex-col gap-2 rounded-lg border border-border bg-surface p-5 transition-colors hover:border-border-strong">
+          <p class="font-mono text-[0.6875rem] text-ink-subtle">
+            <span class="text-accent uppercase">{t.categories[article.data.category]}</span>
+            <span aria-hidden="true"> · </span>
+            <time datetime={toISODate(article.data.pubDate)}>
+              {formatDate(article.data.pubDate, locale)}
+            </time>
+          </p>
+
+          <h3 class="font-serif text-[1.0625rem] leading-snug font-semibold text-ink">
+            <a
+              href={localizedPath('articles', locale, article.slug)}
+              class="after:absolute after:inset-0 after:content-['']"
+            >
+              {article.data.title}
+            </a>
+          </h3>
+
+          <p class="text-sm text-ink-muted">
+            {interpolate(t.article.readingTime, { minutes: article.readingTime })}
+          </p>
+        </li>
+      ))}
+    </ul>
+  </section>
+)}

@@ -1,0 +1,130 @@
+---
+title: Separando regras de negócio da camada HTTP numa API Python
+description: Por que a view não é o lugar das regras de negócio, e como uma camada de serviços explícita mantém uma API Django testável conforme o domínio cresce.
+pubDate: 2026-08-22
+draft: true
+category: backend
+tags:
+  - Python
+  - Django
+  - APIs
+  - Arquitetura
+relatedArticles:
+  - idempotencia-endpoints
+---
+
+Uma API Django começa simples. A view recebe a requisição, valida o payload,
+grava no banco e devolve uma resposta. Enquanto a operação é uma escrita direta,
+isso é adequado — introduzir camadas nesse estágio é custo sem retorno.
+
+O problema aparece quando a mesma operação passa a ter consequências: criar um
+registro também precisa reservar capacidade, notificar outro sistema e respeitar
+uma condição que depende do estado atual. A view cresce, e junto com ela cresce
+a dificuldade de responder a uma pergunta simples: _onde está a regra?_
+
+## O sintoma
+
+O sinal mais confiável de que a separação já deveria ter acontecido é a segunda
+porta de entrada. Um comando de gestão, uma task assíncrona ou um webhook precisa
+executar a mesma operação — e a única implementação existente está presa dentro
+de uma view.
+
+O que costuma acontecer em seguida é a duplicação da lógica, e a partir daí as
+duas cópias divergem silenciosamente.
+
+## A camada de serviço
+
+A correção é modesta: uma função que recebe dados já validados e devolve o
+resultado da operação, sem saber nada sobre HTTP.
+
+```python
+from dataclasses import dataclass
+
+@dataclass(frozen=True)
+class ScheduleSession:
+    patient_id: int
+    professional_id: int
+    starts_at: datetime
+
+
+def schedule_session(command: ScheduleSession) -> Session:
+    """Agenda uma sessão, garantindo que o horário permanece livre.
+
+    Não conhece request, response nem status code: a mesma função serve a uma
+    view, a um comando de gestão e a um consumidor de fila.
+    """
+    with transaction.atomic():
+        if _has_conflict(command.professional_id, command.starts_at):
+            raise SlotUnavailable(command.starts_at)
+
+        session = Session.objects.create(
+            patient_id=command.patient_id,
+            professional_id=command.professional_id,
+            starts_at=command.starts_at,
+        )
+
+    notify_scheduled(session)
+    return session
+```
+
+A view fica com aquilo que é, de fato, responsabilidade dela:
+
+```python
+class SessionCreateView(APIView):
+    def post(self, request):
+        serializer = SessionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            session = schedule_session(ScheduleSession(**serializer.validated_data))
+        except SlotUnavailable as error:
+            return Response({"detail": str(error)}, status=409)
+
+        return Response(SessionSerializer(session).data, status=201)
+```
+
+## A divisão que importa
+
+A fronteira útil não é "view fina, serviço gordo". É uma divisão por tipo de
+responsabilidade:
+
+| Camada     | Responsabilidade                                            |
+| ---------- | ----------------------------------------------------------- |
+| Serializer | Forma dos dados: tipos, obrigatoriedade, formato            |
+| View       | Tradução entre HTTP e domínio: status, permissões           |
+| Serviço    | Regra de negócio: o que pode acontecer, e sob que condições |
+| Model      | Persistência e invariantes do próprio registro              |
+
+A pergunta que separa serializer de serviço é útil: _essa validação depende de
+outros registros?_ Um campo obrigatório é forma. "Este horário está livre" é
+regra — depende do estado do sistema e pode mudar entre a validação e a escrita.
+
+## O ganho concreto
+
+**Testes deixam de precisar de HTTP.** A regra é testada chamando uma função:
+
+```python
+def test_rejects_overlapping_session(professional, patient):
+    existing = SessionFactory(professional=professional, starts_at=NOON)
+
+    with pytest.raises(SlotUnavailable):
+        schedule_session(
+            ScheduleSession(patient.id, professional.id, existing.starts_at)
+        )
+```
+
+Sem cliente HTTP, sem rota, sem autenticação. Quando testar a regra é barato, a
+regra passa a ser testada.
+
+**Os erros ganham vocabulário.** `SlotUnavailable` carrega significado de
+domínio; `Response(status=409)` carrega apenas protocolo. A tradução de um para o
+outro acontece num único lugar, e é a view quem a faz.
+
+## Quando não fazer
+
+Essa separação tem custo: mais arquivos, mais indireção. Para um CRUD que é
+genuinamente um CRUD, o serviço não acrescenta nada além de uma chamada extra.
+
+O gatilho não é o tamanho da aplicação. É a primeira vez que uma operação passa a
+ter uma regra que não cabe num serializer — ou a primeira vez que ela precisa ser
+chamada de dois lugares.

@@ -1,0 +1,131 @@
+---
+title: Separating business rules from the HTTP layer in a Python API
+description: Why the view is not where business rules belong, and how an explicit service layer keeps a Django API testable as the domain grows.
+pubDate: 2026-08-22
+draft: true
+category: backend
+tags:
+  - Python
+  - Django
+  - APIs
+  - Architecture
+relatedArticles:
+  - idempotencia-endpoints
+---
+
+A Django API starts out simple. The view takes the request, validates the
+payload, writes to the database and returns a response. While the operation is a
+straight write, that is the right shape — introducing layers at this stage is
+cost without return.
+
+The problem shows up when the same operation starts having consequences:
+creating a record also has to reserve capacity, notify another system and respect
+a condition that depends on current state. The view grows, and with it the
+difficulty of answering a simple question: _where is the rule?_
+
+## The symptom
+
+The most reliable sign that the split should already have happened is the second
+entry point. A management command, a background task or a webhook needs to
+perform the same operation — and the only implementation there is sits inside a
+view.
+
+What usually follows is a copy of the logic, and from that point the two copies
+drift apart quietly.
+
+## The service layer
+
+The fix is modest: a function that takes already-validated data and returns the
+result of the operation, knowing nothing about HTTP.
+
+```python
+from dataclasses import dataclass
+
+@dataclass(frozen=True)
+class ScheduleSession:
+    patient_id: int
+    professional_id: int
+    starts_at: datetime
+
+
+def schedule_session(command: ScheduleSession) -> Session:
+    """Schedule a session, making sure the slot stays free.
+
+    Knows nothing about requests, responses or status codes: the same function
+    serves a view, a management command and a queue consumer.
+    """
+    with transaction.atomic():
+        if _has_conflict(command.professional_id, command.starts_at):
+            raise SlotUnavailable(command.starts_at)
+
+        session = Session.objects.create(
+            patient_id=command.patient_id,
+            professional_id=command.professional_id,
+            starts_at=command.starts_at,
+        )
+
+    notify_scheduled(session)
+    return session
+```
+
+The view is left with what is genuinely its job:
+
+```python
+class SessionCreateView(APIView):
+    def post(self, request):
+        serializer = SessionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            session = schedule_session(ScheduleSession(**serializer.validated_data))
+        except SlotUnavailable as error:
+            return Response({"detail": str(error)}, status=409)
+
+        return Response(SessionSerializer(session).data, status=201)
+```
+
+## The split that matters
+
+The useful boundary is not "thin view, fat service". It is a split by kind of
+responsibility:
+
+| Layer      | Responsibility                                               |
+| ---------- | ------------------------------------------------------------ |
+| Serializer | Shape of the data: types, required fields, format            |
+| View       | Translation between HTTP and the domain: status, permissions |
+| Service    | Business rule: what may happen, and under what conditions    |
+| Model      | Persistence and the record's own invariants                  |
+
+One question cleanly separates serializer from service: _does this validation
+depend on other records?_ A required field is shape. "This slot is free" is a
+rule — it depends on system state and can change between validation and write.
+
+## The concrete payoff
+
+**Tests stop needing HTTP.** The rule is tested by calling a function:
+
+```python
+def test_rejects_overlapping_session(professional, patient):
+    existing = SessionFactory(professional=professional, starts_at=NOON)
+
+    with pytest.raises(SlotUnavailable):
+        schedule_session(
+            ScheduleSession(patient.id, professional.id, existing.starts_at)
+        )
+```
+
+No HTTP client, no route, no authentication. When testing a rule is cheap, the
+rule actually gets tested.
+
+**Errors gain vocabulary.** `SlotUnavailable` carries domain meaning;
+`Response(status=409)` carries only protocol. Translating one into the other
+happens in exactly one place, and the view is what does it.
+
+## When not to do this
+
+The separation has a cost: more files, more indirection. For a CRUD endpoint
+that is genuinely CRUD, the service adds nothing but an extra call.
+
+The trigger is not application size. It is the first time an operation acquires a
+rule that does not fit in a serializer — or the first time it needs to be called
+from two places.

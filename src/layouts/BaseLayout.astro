@@ -1,0 +1,50 @@
+---
+import Footer from '@components/layout/Footer.astro';
+import Header from '@components/layout/Header.astro';
+import ThemeScript from '@components/layout/ThemeScript.astro';
+import JsonLd from '@components/seo/JsonLd.astro';
+import SEO from '@components/seo/SEO.astro';
+import { HTML_LANG, type Locale } from '@config/locales';
+import { useTranslations } from '@i18n/index';
+import type { SeoData } from '@utils/seo';
+import '@styles/global.css';
+
+interface Props {
+  locale: Locale;
+  seo: SeoData;
+  /** Serialized JSON-LD `@graph`, when the page has structured data. */
+  jsonLd?: string;
+  /** Translations available for this page, used by the language switcher. */
+  alternatePaths?: Partial<Record<Locale, string>>;
+}
+
+const { locale, seo, jsonLd, alternatePaths } = Astro.props;
+const t = useTranslations(locale);
+---
+
+<!doctype html>
+<html lang={HTML_LANG[locale]}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <ThemeScript />
+    <SEO locale={locale} seo={seo} />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fbfbf9" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1a1a19" />
+    {jsonLd && <JsonLd json={jsonLd} />}
+  </head>
+
+  <body class="flex min-h-dvh flex-col bg-bg text-ink antialiased">
+    <a class="skip-link" href="#main">
+      {t.nav.skipToContent}
+    </a>
+    <Header locale={locale} alternatePaths={alternatePaths} />
+    <main id="main" class="flex-1">
+      <slot />
+    </main>
+    <Footer locale={locale} />
+  </body>
+</html>

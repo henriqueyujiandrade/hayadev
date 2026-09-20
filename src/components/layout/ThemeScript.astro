@@ -1,0 +1,26 @@
+---
+import { THEME_STORAGE_KEY } from '@config/theme';
+
+/**
+ * Applies a previously chosen theme before first paint.
+ *
+ * Only an explicit choice is written to `data-theme`; when the visitor has not
+ * chosen, the attribute stays absent and `prefers-color-scheme` in the
+ * stylesheet decides. That keeps the correct theme for visitors without
+ * JavaScript and avoids a flash of the wrong palette for everyone else.
+ *
+ * `is:inline` is required: this must run synchronously in <head>, before the
+ * body is painted, so it cannot be bundled or deferred.
+ */
+---
+
+<script is:inline define:vars={{ storageKey: THEME_STORAGE_KEY }}>
+  try {
+    const stored = localStorage.getItem(storageKey);
+    if (stored === 'light' || stored === 'dark') {
+      document.documentElement.dataset.theme = stored;
+    }
+  } catch {
+    /* Private mode or blocked storage: fall back to the OS preference. */
+  }
+</script>

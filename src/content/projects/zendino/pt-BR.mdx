@@ -1,0 +1,128 @@
+---
+title: Zendino
+description: Jogo de biofeedback respiratório para crianças, em React e Canvas, em que uma árvore guia a respiração e um dinossauro reage à frequência cardíaca. Desenvolvido na Self.
+shortDescription: Jogo de biofeedback respiratório para crianças, com sensor de frequência cardíaca.
+projectType: game
+status: completed
+role: Desenvolvimento do jogo
+technologies:
+  - TypeScript
+  - React
+  - Canvas
+  - Vite
+  - Web Bluetooth
+  - Styled Components
+year: 2026
+featured: true
+confidential: true
+caseStudy: true
+order: 20
+---
+
+**Zendino** é um jogo de biofeedback respiratório para crianças. O jogador respira
+no ritmo que a animação propõe, e um sensor de frequência cardíaca, opcional,
+mede a variabilidade dos batimentos: um dinossauro reage à qualidade da
+respiração, de triste a satisfeito. Foi desenvolvido na Self e roda no navegador,
+embutido no portal da plataforma.
+
+O que segue são as decisões técnicas por trás dele.
+
+## Um guia que faz parte do cenário
+
+O jogo tem dois modos, e em ambos o guia da respiração é o próprio cenário. No
+**modo principal**, uma árvore cresce enquanto a criança inspira, encolhe enquanto
+ela expira e fica parada nas pausas. No **modo alternativo**, o dinossauro respira
+em ciclo, as árvores balançam e um fluxo de ar sai do nariz ou da boca dele.
+
+Por baixo, a árvore é uma pequena máquina de estados — crescendo, pausa cheia,
+encolhendo, pausa vazia —, e a escala dela segue uma curva suavizada, e não linear,
+para o movimento não parecer mecânico. O indicador de respiração do HUD não é
+calculado em paralelo: ele lê o estado do próprio guia, então os dois não podem
+divergir.
+
+## Uma recompensa que não pune
+
+A emoção do dinossauro é o canal de recompensa. A lógica que a decide é composta
+de funções puras, sem nada de desenho dentro. Com sensor, ela parte do nível de
+respiração medido, e a **política de dificuldade** decide o quanto a emoção pode
+voltar atrás:
+
+```ts
+type Policy = 'easy' | 'medium' | 'hard';
+type Reading = { measured: number; current: number; wellBelowBaseline: boolean };
+
+// Dada a leitura, quando a emoção do dinossauro pode mudar.
+function nextLevel(policy: Policy, r: Reading) {
+  if (policy === 'hard') return r.measured; // segue a medida
+  if (policy === 'easy') return Math.max(r.measured, r.current); // só avança
+  if (r.measured >= r.current) return r.measured; // médio: avança livremente
+  return r.wellBelowBaseline ? r.measured : r.current; // e só regride com folga
+}
+```
+
+No modo fácil, uma respiração ruim nunca piora o dinossauro. No médio, ele avança
+livremente e só regride quando a medida cai bem abaixo da referência da
+calibração, o que evita que ele oscile a cada queda momentânea. No difícil, ele
+acompanha a medida.
+
+**Sem sensor, o jogo não fica sem recompensa.** Um cronograma faz a emoção avançar
+com o progresso da sessão. Ele é indexado pela posição **absoluta** na sessão, e
+não pelo tempo que resta, então cair no modo automático no meio da partida não
+recomeça do zero. E há um **piso**: se o sensor falha com o dinossauro já feliz, o
+cronograma diria "triste", e a criança seria punida por uma falha de hardware. O
+piso segura o que ela já conquistou. A mesma lógica vale quando o sinal se perde
+por tempo demais ou a conexão cai: a sessão continua, em modo automático.
+
+## Transições sem saltos
+
+Num jogo pensado para acalmar, uma troca brusca de imagem chama atenção para si.
+Por isso quase nada muda de imediato:
+
+- uma nova emoção fica **pendente** até a animação atual chegar ao quadro zero, e
+  é descartada se a medida voltar ao valor anterior antes disso;
+- ao fim da sessão, o dinossauro completa o ciclo em curso e para no quadro zero, e
+  a árvore assenta no ponto médio do zoom, detectado pelo cruzamento nos dois
+  sentidos, antes de começar a animação final;
+- uma pausa congela a cena em vez de apagá-la, e ao retomar o relógio do laço é
+  zerado, para o tempo parado não virar um salto.
+
+## Canvas em resolução fixa
+
+Todo o desenho acontece num canvas de resolução lógica fixa, escalado para a janela
+por uma transformação, com a proporção mantida e o conjunto centralizado. Assim,
+posições, tamanhos e deslocamentos vivem num único sistema de coordenadas, e o jogo
+não recalcula layout para cada tamanho de tela.
+
+O laço de desenho fica fora do ciclo de vida do React e lê o estado por refs, e o
+indicador de respiração segue o mesmo caminho: o laço escreve o estado do guia
+numa ref compartilhada, e o indicador, com o seu próprio laço, altera o estilo do
+elemento direto no DOM. O preenchimento, atualizado a cada quadro, não passa pelo
+estado do React, então não custa nenhuma re-renderização. Cada estado do
+jogo — pré-jogo, jogando, pausado, fim — tem o seu ramo de desenho. As camadas do
+fundo que usam filtro são pré-renderizadas num `OffscreenCanvas` e só refeitas
+quando o tamanho muda, e o fluxo de ar do modo alternativo é um conjunto fixo de
+partículas, com fase sinalizada: o sinal diz se elas convergem para a origem, na
+inspiração, ou se afastam dela, na expiração.
+
+## Um tutorial feito com o próprio jogo
+
+O tutorial não é uma animação à parte. Ele monta o mesmo dinossauro, as mesmas
+árvores, o mesmo fundo e as mesmas partículas do jogo, dirigidos por passos. Como é
+o mesmo código de desenho, o que o tutorial mostra é o que o jogo faz.
+
+## Biofeedback e plataforma
+
+A camada de biofeedback vem do template da linha de jogos terapêuticos da Self e foi
+reaproveitada. A variabilidade da frequência cardíaca (RMSSD) é calculada no
+navegador a partir dos intervalos entre os batimentos do sensor, via Web Bluetooth,
+comparada com uma referência da calibração e reduzida a um nível, o mesmo que
+alimenta a emoção do dinossauro. O sensor é opcional. O jogo roda embutido no portal
+da plataforma, que cria a sessão e recebe o resultado da partida. É a camada de jogo
+que este texto descreve.
+
+## O que este projeto demonstra
+
+Do ponto de vista de engenharia, o interesse aqui não é o dinossauro. É que a
+experiência de uma criança — uma recompensa que não pune, transições sem saltos, um
+sensor que pode falhar — foi traduzida em regras pequenas e isoladas do desenho,
+sobre um laço de renderização simples e previsível.
