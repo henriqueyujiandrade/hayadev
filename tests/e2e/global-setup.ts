@@ -5,11 +5,26 @@ import { DEV_PORT, DEV_URL, PREVIEW_PORT, PREVIEW_URL } from './constants';
 /**
  * Builds the site and starts both servers the suite needs.
  *
- * Astro 7 runs `dev` and `preview` as managed background processes that return
- * immediately, so neither can be driven by Playwright's `webServer` option,
- * which expects a command that stays in the foreground. Starting them here —
- * and stopping them in the teardown — uses Astro's own lifecycle rather than
- * fighting it.
+ * Astro 7 can run `dev` and `preview` as managed background processes, so
+ * neither has to be driven by Playwright's `webServer` option, which expects a
+ * command that stays in the foreground. Starting them here — and stopping them
+ * in the teardown — uses Astro's own lifecycle rather than fighting it.
+ *
+ * **`--background` is required, explicitly, on both commands.** Without it,
+ * Astro only backgrounds itself when its own agent-detection heuristic
+ * (`am-i-vibing`, wired through `isRunByAgent()` in the Astro CLI) decides the
+ * parent process is an AI coding agent — which is true for a local Claude Code
+ * session, so this silently "worked" in every local and manual run, but false
+ * on a CI runner. There the command attaches to the inherited stdio and runs
+ * in the foreground exactly as it would in an interactive terminal, so the
+ * `execFileSync` call below never returns and the whole suite hangs — the
+ * failure this repository actually hit once, on GitHub Actions
+ * (https://github.com/henriqueyujiandrade/hayadev/actions/runs/35515396515).
+ * Reproduce it locally with `env -u CLAUDECODE pnpm test:e2e` (or unset
+ * whichever agent marker applies) before trusting a change here — a normal
+ * local run cannot catch a regression on this line. Passing `--background`
+ * makes the choice explicit and independent of who — or what — is running the
+ * command.
  *
  * - The preview server serves a production build, where draft filtering, the
  *   sitemap, the feeds and the CSP behave as they will in production.
@@ -38,12 +53,13 @@ export default async function globalSetup(): Promise<void> {
 
   stopServers();
 
-  execFileSync('pnpm', ['exec', 'astro', 'preview', '--port', String(PREVIEW_PORT)], {
-    stdio: 'inherit',
-    timeout: SPAWN_TIMEOUT_MS,
-  });
+  execFileSync(
+    'pnpm',
+    ['exec', 'astro', 'preview', '--port', String(PREVIEW_PORT), '--background'],
+    { stdio: 'inherit', timeout: SPAWN_TIMEOUT_MS },
+  );
 
-  execFileSync('pnpm', ['exec', 'astro', 'dev', '--port', String(DEV_PORT)], {
+  execFileSync('pnpm', ['exec', 'astro', 'dev', '--port', String(DEV_PORT), '--background'], {
     stdio: 'inherit',
     /*
      * The dev toolbar injects a shadow DOM that Playwright's selectors pierce,
