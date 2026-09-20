@@ -17,6 +17,8 @@ jobs:
   verify:
     name: Types, lint and unit tests
     runs-on: ubuntu-latest
+    # A run-away step should fail loud, not occupy a runner for hours.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
 
@@ -66,6 +68,8 @@ jobs:
   e2e:
     name: End-to-end and accessibility
     runs-on: ubuntu-latest
+    # A run-away step should fail loud, not occupy a runner for hours.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
 

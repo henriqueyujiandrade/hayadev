@@ -16,15 +16,31 @@ import { DEV_PORT, DEV_URL, PREVIEW_PORT, PREVIEW_URL } from './constants';
  * - The dev server is where drafts exist, and is therefore the only place the
  *   article pipeline can be tested until the first article is published.
  */
+/**
+ * `astro dev`/`preview` are expected to daemonize and return in about a
+ * second. Nothing downstream bounds these calls — `waitForServer` only starts
+ * once they return — so a spawn that never comes back (a hung install, a
+ * stalled network call, an environment where the CLI picks foreground mode
+ * instead of backgrounding itself) would otherwise block the whole suite
+ * forever with no error. Giving each call its own timeout turns that into a
+ * fast, attributable failure instead of a silent multi-hour hang.
+ */
+const SPAWN_TIMEOUT_MS = 120_000;
+
 export default async function globalSetup(): Promise<void> {
   if (process.env.PLAYWRIGHT_SKIP_BUILD !== '1') {
-    execFileSync('pnpm', ['build'], { stdio: 'inherit', env: { ...process.env, CI: '1' } });
+    execFileSync('pnpm', ['build'], {
+      stdio: 'inherit',
+      env: { ...process.env, CI: '1' },
+      timeout: SPAWN_TIMEOUT_MS,
+    });
   }
 
   stopServers();
 
   execFileSync('pnpm', ['exec', 'astro', 'preview', '--port', String(PREVIEW_PORT)], {
     stdio: 'inherit',
+    timeout: SPAWN_TIMEOUT_MS,
   });
 
   execFileSync('pnpm', ['exec', 'astro', 'dev', '--port', String(DEV_PORT)], {
@@ -35,6 +51,7 @@ export default async function globalSetup(): Promise<void> {
      * the page under test.
      */
     env: { ...process.env, ASTRO_DEV_TOOLBAR: 'off' },
+    timeout: SPAWN_TIMEOUT_MS,
   });
 
   await Promise.all([waitForServer(PREVIEW_URL), waitForServer(DEV_URL)]);
