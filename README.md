@@ -248,11 +248,17 @@ export const socialLinks = {
 ```ts
 // src/config/person.ts
 email: 'you@example.com',
+whatsapp: '5511912345678', // digits only; shown on the Contact page alone
 ```
 
 Filling these in adds the icons to the header, footer and About page, adds the contact section to
 the home page, and adds the URLs to the `Person` structured data as `sameAs`. Leaving them empty
 removes those elements entirely — the site never ships a placeholder.
+
+The Contact page (`/contato/`) lists every configured channel. Its form has no backend: on submit it
+builds a `mailto:` URL with the subject and message (`src/utils/contact.ts`) and opens the visitor's
+mail app, then offers the address with a copy button for devices without one. The WhatsApp number is
+deliberately published only there — not in the footer or the structured data.
 
 ### Using a full name
 
@@ -279,6 +285,7 @@ Three locales: `pt-BR` (default, served from the root), `en` and `es`.
 /projetos/                 /en/projects/            /es/proyectos/
 /artigos/                  /en/articles/            /es/articulos/
 /sobre/                    /en/about/               /es/sobre/
+/contato/                  /en/contact/             /es/contacto/
 /lab/                      /en/lab/                 /es/lab/
 /feed.xml                  /en/feed.xml             /es/feed.xml
 ```

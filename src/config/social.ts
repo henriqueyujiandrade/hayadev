@@ -6,8 +6,8 @@
  * the header, footer, contact section and `sameAs` structured data.
  */
 export const socialLinks = {
-  github: '',
-  linkedin: '',
+  github: 'https://github.com/henriqueyujiandrade',
+  linkedin: 'https://www.linkedin.com/in/henriqueyujiandrade/',
   x: '',
   mastodon: '',
   bluesky: '',

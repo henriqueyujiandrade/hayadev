@@ -1,0 +1,148 @@
+---
+import { Globe, Mail, MessageCircle } from '@lucide/astro';
+import ContactForm from '@components/contact/ContactForm.astro';
+import GithubIcon from '@components/icons/GithubIcon.astro';
+import LinkedinIcon from '@components/icons/LinkedinIcon.astro';
+import Container from '@components/ui/Container.astro';
+import type { Locale } from '@config/locales';
+import { person } from '@config/person';
+import { getSocialLinks, type SocialPlatform } from '@config/social';
+import PageLayout from '@layouts/PageLayout.astro';
+import { useTranslations } from '@i18n/index';
+import { displayUrl, formatPhone, mailtoUrl, whatsappUrl } from '@utils/contact';
+import { homePath, localizedPath } from '@utils/routes';
+import { buildAlternates, defaultOgImage, formatTitle, pathsForAllLocales } from '@utils/seo';
+import { breadcrumbSchema, graph, personSchema, type BreadcrumbItem } from '@utils/structured-data';
+import { absoluteUrl, isExternalUrl, relForUrl } from '@utils/url';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const t = useTranslations(locale);
+
+const path = localizedPath('contact', locale);
+const alternatePaths = pathsForAllLocales((target) => localizedPath('contact', target));
+const { alternates, xDefault } = buildAlternates(alternatePaths);
+
+const seo = {
+  title: formatTitle(t.contact.title),
+  description: t.contact.metaDescription,
+  canonical: absoluteUrl(path),
+  alternates,
+  xDefault,
+  ogType: 'website' as const,
+  ogImage: defaultOgImage(),
+  ogImageAlt: `${person.name} — ${t.contact.title}`,
+  noindex: false,
+};
+
+const breadcrumbs: BreadcrumbItem[] = [
+  { name: t.nav.home, path: homePath(locale) },
+  { name: t.contact.title, path },
+];
+
+const jsonLd = graph([personSchema(locale), breadcrumbSchema(breadcrumbs)]);
+
+const profileIcons: Record<SocialPlatform, typeof Globe> = {
+  github: GithubIcon,
+  linkedin: LinkedinIcon,
+  x: Globe,
+  mastodon: Globe,
+  bluesky: Globe,
+};
+
+/* Same rule as the rest of the site: a channel that is not configured is not rendered. */
+const channels = [
+  ...(person.email
+    ? [
+        {
+          label: t.contact.emailLabel,
+          value: person.email,
+          hint: t.contact.emailHint,
+          href: mailtoUrl({ to: person.email }),
+          Icon: Mail,
+        },
+      ]
+    : []),
+  ...(person.whatsapp
+    ? [
+        {
+          label: t.contact.whatsappLabel,
+          value: formatPhone(person.whatsapp),
+          hint: t.contact.whatsappHint,
+          href: whatsappUrl(person.whatsapp, t.contact.whatsappGreeting),
+          Icon: MessageCircle,
+        },
+      ]
+    : []),
+  ...getSocialLinks().map((link) => ({
+    label: link.label,
+    value: displayUrl(link.url),
+    hint: undefined,
+    href: link.url,
+    Icon: profileIcons[link.platform],
+  })),
+];
+---
+
+<PageLayout
+  locale={locale}
+  seo={seo}
+  jsonLd={jsonLd}
+  alternatePaths={alternatePaths}
+  title={t.contact.title}
+  lead={t.contact.lead}
+  eyebrow={t.nav.contact}
+  breadcrumbs={breadcrumbs}
+>
+  <Container class="pt-12 pb-section">
+    <div class="grid gap-16 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-20">
+      {person.email && (
+        <section aria-labelledby="contact-form-heading" class="flex max-w-measure flex-col gap-6">
+          <div class="flex flex-col gap-2">
+            <h2 id="contact-form-heading" class="font-serif text-h2 text-ink">
+              {t.contact.formTitle}
+            </h2>
+            <p class="text-ink-muted">{t.contact.formLead}</p>
+          </div>
+          <ContactForm locale={locale} email={person.email} />
+        </section>
+      )}
+
+      {channels.length > 0 && (
+        <section aria-labelledby="contact-channels-heading" class="flex flex-col gap-6">
+          <h2 id="contact-channels-heading" class="font-serif text-h2 text-ink">
+            {t.contact.channelsTitle}
+          </h2>
+          <ul class="flex list-none flex-col gap-3 p-0">
+            {channels.map((channel) => (
+              <li>
+                <a
+                  href={channel.href}
+                  rel={relForUrl(channel.href)}
+                  target={isExternalUrl(channel.href) ? '_blank' : undefined}
+                  class="group flex items-start gap-4 rounded-lg border border-border bg-surface p-4 transition-colors hover:border-ink-muted hover:bg-surface-muted"
+                >
+                  <span class="inline-grid size-10 shrink-0 place-items-center rounded-md border border-border bg-surface-muted text-ink-muted transition-colors group-hover:text-ink">
+                    <channel.Icon class="size-[1.125rem]" aria-hidden="true" />
+                  </span>
+                  <span class="flex min-w-0 flex-col gap-0.5">
+                    <span class="font-medium text-ink">{channel.label}</span>
+                    <span class="font-mono text-[0.8125rem] break-all text-ink-muted">
+                      {channel.value}
+                    </span>
+                    {channel.hint && (
+                      <span class="text-[0.8125rem] text-ink-subtle">{channel.hint}</span>
+                    )}
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </div>
+  </Container>
+</PageLayout>

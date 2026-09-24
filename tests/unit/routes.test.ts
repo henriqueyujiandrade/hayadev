@@ -17,6 +17,7 @@ describe('localizedPath', () => {
     expect(localizedPath('articles', 'pt-BR')).toBe('/artigos/');
     expect(localizedPath('about', 'pt-BR')).toBe('/sobre/');
     expect(localizedPath('lab', 'pt-BR')).toBe('/lab/');
+    expect(localizedPath('contact', 'pt-BR')).toBe('/contato/');
   });
 
   it('translates the path segment, not just the locale prefix', () => {
@@ -25,6 +26,8 @@ describe('localizedPath', () => {
     expect(localizedPath('articles', 'en')).toBe('/en/articles/');
     expect(localizedPath('articles', 'es')).toBe('/es/articulos/');
     expect(localizedPath('about', 'es')).toBe('/es/sobre/');
+    expect(localizedPath('contact', 'en')).toBe('/en/contact/');
+    expect(localizedPath('contact', 'es')).toBe('/es/contacto/');
   });
 
   it('keeps one slug across all locales for the same entity', () => {

@@ -122,7 +122,7 @@ test.describe('mobile navigation', () => {
   test('keeps the navigation links in the HTML even while collapsed', async ({ page }) => {
     const html = await (await page.request.get('/')).text();
 
-    for (const label of ['Projetos', 'Artigos', 'Lab', 'Sobre']) {
+    for (const label of ['Projetos', 'Artigos', 'Lab', 'Sobre', 'Contato']) {
       expect(html, `"${label}" must be crawlable`).toContain(label);
     }
   });

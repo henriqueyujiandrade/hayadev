@@ -18,7 +18,14 @@ export const person = {
   /** Brand the person publishes under. */
   brand: 'HayaDev',
   /** Contact address. Leave empty to hide every mailto affordance. */
-  email: '',
+  email: 'henrique_yujiandrade@hotmail.com',
+  /**
+   * WhatsApp number in E.164 digits (country code, no `+`, spaces or dashes).
+   * Only the Contact page links to it — it is kept out of the footer and the
+   * structured data so it is published in as few places as possible. Leave
+   * empty to hide it.
+   */
+  whatsapp: '5511970123173',
   /** City and country, shown in the footer and structured data. */
   location: {
     city: 'São Paulo',

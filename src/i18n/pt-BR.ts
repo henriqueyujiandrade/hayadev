@@ -6,6 +6,7 @@ export const ptBR: UIDictionary = {
     articles: 'Artigos',
     lab: 'Lab',
     about: 'Sobre',
+    contact: 'Contato',
     primaryLabel: 'Navegação principal',
     openMenu: 'Abrir menu',
     closeMenu: 'Fechar menu',
@@ -148,6 +149,33 @@ export const ptBR: UIDictionary = {
     present: 'atual',
     remote: 'Remoto',
     languagesTitle: 'Idiomas',
+  },
+
+  contact: {
+    title: 'Contato',
+    lead: 'Proposta de trabalho, dúvida sobre um projeto ou só uma conversa sobre backend — escolha o canal que preferir.',
+    metaDescription:
+      'Fale com Henrique por e-mail, WhatsApp, LinkedIn ou GitHub. Desenvolvedor backend e full stack em São Paulo.',
+    cta: 'Enviar mensagem',
+    formTitle: 'Enviar um e-mail',
+    formLead:
+      'Escreva o assunto e a mensagem. Ao enviar, seu app de e-mail abre com tudo preenchido — é só revisar e mandar.',
+    subjectLabel: 'Assunto',
+    subjectPlaceholder: 'Ex.: Proposta de projeto',
+    messageLabel: 'Mensagem',
+    messagePlaceholder: 'Conte um pouco sobre o que você precisa.',
+    submit: 'Abrir no meu e-mail',
+    fallback:
+      'Se nada abriu, seu dispositivo pode não ter um app de e-mail configurado. Copie o endereço e escreva pelo seu provedor:',
+    noScript: 'O formulário precisa de JavaScript. Você pode escrever direto para:',
+    copyEmail: 'Copiar e-mail',
+    copied: 'E-mail copiado',
+    channelsTitle: 'Canais',
+    emailLabel: 'E-mail',
+    emailHint: 'Para propostas e conversas mais longas',
+    whatsappLabel: 'WhatsApp',
+    whatsappHint: 'Para uma conversa rápida',
+    whatsappGreeting: 'Olá, Henrique! Vim pelo seu site.',
   },
 
   notFound: {

@@ -1,0 +1,177 @@
+---
+import { Check, Copy, Send } from '@lucide/astro';
+import type { Locale } from '@config/locales';
+import { useTranslations } from '@i18n/index';
+
+interface Props {
+  locale: Locale;
+  /** Address the composed email is sent to. */
+  email: string;
+}
+
+const { locale, email } = Astro.props;
+const t = useTranslations(locale);
+
+const fieldClass = [
+  'w-full rounded-md border border-border-control bg-surface px-3.5 py-2.5',
+  'text-[0.9375rem] text-ink placeholder:text-ink-subtle',
+  'transition-colors hover:border-ink-muted focus:border-accent focus:outline-none',
+  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
+].join(' ');
+---
+
+{/*
+  The site is static, so this form sends nothing by itself: on submit it
+  composes a `mailto:` URL with the subject and message and hands it to the
+  visitor's mail app. No backend, no third-party form service, no change to the
+  CSP. The script is a few lines of DOM work, so it stays vanilla rather than
+  shipping the React runtime for one form.
+
+  `form-action 'self'` in the CSP would block a native `action="mailto:"`
+  submission, which is why the URL is built in the script. Without JavaScript
+  the form is replaced by the plain address.
+*/}
+<noscript>
+  <p class="text-ink-muted">
+    {t.contact.noScript}{' '}
+    <a href={`mailto:${email}`} class="font-medium text-accent underline underline-offset-4">
+      {email}
+    </a>
+  </p>
+</noscript>
+
+<form data-contact-form data-to={email} class="contact-form flex flex-col gap-5">
+  <div class="flex flex-col gap-2">
+    <label for="contact-subject" class="text-sm font-medium text-ink">
+      {t.contact.subjectLabel}
+    </label>
+    <input
+      id="contact-subject"
+      name="subject"
+      type="text"
+      required
+      maxlength="150"
+      autocomplete="off"
+      placeholder={t.contact.subjectPlaceholder}
+      class={fieldClass}
+    />
+  </div>
+
+  <div class="flex flex-col gap-2">
+    <label for="contact-message" class="text-sm font-medium text-ink">
+      {t.contact.messageLabel}
+    </label>
+    <textarea
+      id="contact-message"
+      name="message"
+      required
+      rows="8"
+      maxlength="1800"
+      placeholder={t.contact.messagePlaceholder}
+      class:list={[fieldClass, 'min-h-40 resize-y leading-relaxed']}
+    ></textarea>
+  </div>
+
+  <div>
+    <button
+      type="submit"
+      class="inline-flex items-center justify-center gap-2 rounded-md border border-accent bg-accent px-4 py-2 text-[0.9375rem] font-medium text-accent-contrast transition-colors duration-150 hover:border-accent-hover hover:bg-accent-hover"
+    >
+      <Send class="size-4" aria-hidden="true" />
+      {t.contact.submit}
+    </button>
+  </div>
+
+  <div data-contact-status role="status" class="text-sm text-ink-muted">
+    <div
+      hidden
+      data-contact-fallback
+      class="flex flex-col gap-3 rounded-md border border-border bg-surface-muted/50 p-4"
+    >
+      <p>{t.contact.fallback}</p>
+      <div class="flex flex-wrap items-center gap-3">
+        <a
+          href={`mailto:${email}`}
+          class="font-mono text-[0.8125rem] text-ink underline underline-offset-4"
+        >
+          {email}
+        </a>
+        <button
+          type="button"
+          data-copy-email
+          data-label-copied={t.contact.copied}
+          class="inline-flex items-center gap-1.5 rounded-md border border-border-control bg-surface px-3 py-1.5 text-sm font-medium text-ink transition-colors hover:border-ink-muted hover:bg-surface-muted"
+        >
+          <Copy class="copy-icon size-3.5" aria-hidden="true" />
+          <Check class="copied-icon size-3.5" aria-hidden="true" />
+          <span data-copy-label>{t.contact.copyEmail}</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</form>
+
+<style>
+  /* Hidden until the script is known to run; the <noscript> note covers the rest. */
+  .contact-form:not([data-ready]) {
+    display: none;
+  }
+
+  .copied-icon {
+    display: none;
+  }
+
+  [data-copied] .copy-icon {
+    display: none;
+  }
+
+  [data-copied] .copied-icon {
+    display: block;
+  }
+</style>
+
+<script>
+  import { mailtoUrl } from '@utils/contact';
+
+  for (const form of document.querySelectorAll<HTMLFormElement>('[data-contact-form]')) {
+    const to = form.dataset.to ?? '';
+    const fallback = form.querySelector<HTMLElement>('[data-contact-fallback]');
+    const copy = form.querySelector<HTMLButtonElement>('[data-copy-email]');
+
+    form.dataset.ready = '';
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (!form.reportValidity()) return;
+
+      const data = new FormData(form);
+      const url = mailtoUrl({
+        to,
+        subject: String(data.get('subject') ?? ''),
+        body: String(data.get('message') ?? ''),
+      });
+
+      /* Exposed for the end-to-end suite, which cannot follow a mailto: navigation. */
+      form.dataset.mailto = url;
+      window.location.href = url;
+
+      /*
+       * There is no way to know whether a mail app picked the link up, so the
+       * way out is always offered afterwards rather than guessed at.
+       */
+      if (fallback) fallback.hidden = false;
+    });
+
+    copy?.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(to);
+      } catch {
+        /* Clipboard unavailable: the address is visible right beside the button. */
+        return;
+      }
+      copy.dataset.copied = '';
+      const label = copy.querySelector('[data-copy-label]');
+      if (label && copy.dataset.labelCopied) label.textContent = copy.dataset.labelCopied;
+    });
+  }
+</script>

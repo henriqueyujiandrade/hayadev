@@ -94,7 +94,7 @@ const interests: Record<Locale, readonly string[]> = {
 };
 
 const contactLinks = [
-  ...(person.email ? [{ href: `mailto:${person.email}`, label: person.email, primary: true }] : []),
+  { href: localizedPath('contact', locale), label: t.contact.cta, primary: true },
   ...getSocialLinks().map((link) => ({ href: link.url, label: link.label, primary: false })),
 ];
 ---

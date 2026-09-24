@@ -13,6 +13,7 @@ export interface UIDictionary {
     articles: string;
     lab: string;
     about: string;
+    contact: string;
     /** Accessible name of the primary navigation landmark. */
     primaryLabel: string;
     openMenu: string;
@@ -152,6 +153,34 @@ export interface UIDictionary {
     present: string;
     remote: string;
     languagesTitle: string;
+  };
+
+  contact: {
+    title: string;
+    lead: string;
+    metaDescription: string;
+    /** Call to action that leads to the Contact page from other sections. */
+    cta: string;
+    formTitle: string;
+    formLead: string;
+    subjectLabel: string;
+    subjectPlaceholder: string;
+    messageLabel: string;
+    messagePlaceholder: string;
+    submit: string;
+    /** Shown after submitting, for visitors without a configured mail app. */
+    fallback: string;
+    /** Shown instead of the form when JavaScript is unavailable. */
+    noScript: string;
+    copyEmail: string;
+    copied: string;
+    channelsTitle: string;
+    emailLabel: string;
+    emailHint: string;
+    whatsappLabel: string;
+    whatsappHint: string;
+    /** First message prefilled in the WhatsApp chat. */
+    whatsappGreeting: string;
   };
 
   notFound: {
