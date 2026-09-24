@@ -51,9 +51,10 @@ test.describe('contact page', () => {
     await expect(form.getByLabel('Mensagem')).toHaveValue('');
   });
 
-  test('keeps the message and offers the address when delivery fails', async ({ page }) => {
+  test('keeps the message and offers other channels when delivery fails', async ({ page }) => {
+    /* A spent quota has no documented status of its own; any failure takes this path. */
     await page.route(contactForm.endpoint, (route) =>
-      route.fulfill({ status: 500, json: { success: false, message: 'Server error' } }),
+      route.fulfill({ status: 429, json: { success: false, message: 'Too may requests.' } }),
     );
 
     await page.goto('/contato/');
@@ -61,6 +62,14 @@ test.describe('contact page', () => {
     await form.getByRole('button', { name: 'Enviar mensagem' }).click();
 
     await expect(form.getByText(/Não foi possível enviar/)).toBeVisible();
+    await expect(form.getByRole('link', { name: 'WhatsApp' })).toHaveAttribute(
+      'href',
+      new RegExp(`^https://wa\\.me/${person.whatsapp}`),
+    );
+    await expect(form.getByRole('link', { name: 'LinkedIn' })).toHaveAttribute(
+      'href',
+      /linkedin\.com/,
+    );
     await expect(form.getByRole('button', { name: 'Copiar e-mail' })).toBeVisible();
     await expect(form.getByLabel('Mensagem')).toHaveValue('Olá!\nTudo bem?');
     await expect(form.getByRole('button', { name: 'Enviar mensagem' })).toBeEnabled();

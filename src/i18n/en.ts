@@ -171,7 +171,8 @@ export const en: UIDictionary = {
     submit: 'Send message',
     sending: 'Sending…',
     success: 'Message sent! Thanks for reaching out — I will get back to you soon.',
-    error: 'The message could not be sent right now. Try again in a moment or write directly to:',
+    error:
+      'The message could not be sent right now. Reach me on WhatsApp or LinkedIn, or write directly to the address below.',
     copyEmail: 'Copy email',
     copied: 'Email copied',
     channelsTitle: 'Channels',

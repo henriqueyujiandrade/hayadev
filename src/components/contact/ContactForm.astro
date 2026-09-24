@@ -3,14 +3,22 @@ import { Check, Copy, Send } from '@lucide/astro';
 import { contactForm } from '@config/contact';
 import type { Locale } from '@config/locales';
 import { useTranslations } from '@i18n/index';
+import { isExternalUrl, relForUrl } from '@utils/url';
+
+export interface FallbackChannel {
+  label: string;
+  href: string;
+}
 
 interface Props {
   locale: Locale;
   /** Address offered to write to directly if delivery fails. */
   email: string;
+  /** Faster channels offered first when delivery fails, e.g. WhatsApp and LinkedIn. */
+  fallbackChannels?: readonly FallbackChannel[];
 }
 
-const { locale, email } = Astro.props;
+const { locale, email, fallbackChannels = [] } = Astro.props;
 const t = useTranslations(locale);
 
 const fieldClass = [
@@ -128,7 +136,26 @@ const labelClass = 'text-sm font-medium text-ink';
       data-contact-error
       class="flex flex-col gap-3 rounded-md border border-border bg-surface-muted/50 p-4 text-ink-muted"
     >
+      {/*
+        Web3Forms documents no distinct answer for a spent monthly quota, so
+        every failure — quota, IP rate limit, outage, offline visitor — gets
+        the same way out rather than a guessed-at reason.
+      */}
       <p>{t.contact.error}</p>
+      {fallbackChannels.length > 0 && (
+        <div class="flex flex-wrap gap-2">
+          {fallbackChannels.map((channel) => (
+            <a
+              href={channel.href}
+              rel={relForUrl(channel.href)}
+              target={isExternalUrl(channel.href) ? '_blank' : undefined}
+              class="inline-flex items-center rounded-md border border-accent bg-accent px-3 py-1.5 text-sm font-medium text-accent-contrast transition-colors hover:border-accent-hover hover:bg-accent-hover"
+            >
+              {channel.label}
+            </a>
+          ))}
+        </div>
+      )}
       <div class="flex flex-wrap items-center gap-3">
         <a
           href={`mailto:${email}`}

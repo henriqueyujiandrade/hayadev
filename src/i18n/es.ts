@@ -172,7 +172,7 @@ export const es: UIDictionary = {
     sending: 'Enviando…',
     success: '¡Mensaje enviado! Gracias por escribir — respondo pronto.',
     error:
-      'No se pudo enviar ahora. Inténtalo de nuevo en unos instantes o escribe directamente a:',
+      'No se pudo enviar el mensaje ahora. Escríbeme por WhatsApp o LinkedIn, o directamente al correo de abajo.',
     copyEmail: 'Copiar correo',
     copied: 'Correo copiado',
     channelsTitle: 'Canales',

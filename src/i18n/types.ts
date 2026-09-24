@@ -174,7 +174,7 @@ export interface UIDictionary {
     submit: string;
     sending: string;
     success: string;
-    /** Shown when delivery fails, followed by the address to write to directly. */
+    /** Shown when delivery fails, followed by the fallback channels and the address. */
     error: string;
     copyEmail: string;
     copied: string;

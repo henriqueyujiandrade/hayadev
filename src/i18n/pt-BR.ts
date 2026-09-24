@@ -170,7 +170,8 @@ export const ptBR: UIDictionary = {
     submit: 'Enviar mensagem',
     sending: 'Enviando…',
     success: 'Mensagem enviada! Obrigado pelo contato — respondo em breve.',
-    error: 'Não foi possível enviar agora. Tente de novo em instantes ou escreva direto para:',
+    error:
+      'Não foi possível enviar a mensagem agora. Fale comigo pelo WhatsApp ou pelo LinkedIn, ou escreva direto para o e-mail abaixo.',
     copyEmail: 'Copiar e-mail',
     copied: 'E-mail copiado',
     channelsTitle: 'Canais',

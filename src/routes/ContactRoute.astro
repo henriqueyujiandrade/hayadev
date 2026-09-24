@@ -54,6 +54,21 @@ const profileIcons: Record<SocialPlatform, typeof Globe> = {
 };
 
 /* Same rule as the rest of the site: a channel that is not configured is not rendered. */
+/* Offered by the form when delivery fails: the channels that answer fastest. */
+const fallbackChannels = [
+  ...(person.whatsapp
+    ? [
+        {
+          label: t.contact.whatsappLabel,
+          href: whatsappUrl(person.whatsapp, t.contact.whatsappGreeting),
+        },
+      ]
+    : []),
+  ...getSocialLinks()
+    .filter((link) => link.platform === 'linkedin')
+    .map((link) => ({ label: link.label, href: link.url })),
+];
+
 const channels = [
   ...(person.email
     ? [
@@ -107,7 +122,7 @@ const channels = [
             </h2>
             <p class="text-ink-muted">{t.contact.formLead}</p>
           </div>
-          <ContactForm locale={locale} email={person.email} />
+          <ContactForm locale={locale} email={person.email} fallbackChannels={fallbackChannels} />
         </section>
       )}
 
