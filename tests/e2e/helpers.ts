@@ -2,7 +2,15 @@ import type { Page } from '@playwright/test';
 
 /** Every page the site publishes, grouped by locale. */
 export const PAGES = {
-  'pt-BR': ['/', '/projetos/', '/artigos/', '/lab/', '/sobre/', '/projetos/hidden-object/', '/contato/'],
+  'pt-BR': [
+    '/',
+    '/projetos/',
+    '/artigos/',
+    '/lab/',
+    '/sobre/',
+    '/projetos/hidden-object/',
+    '/contato/',
+  ],
   en: [
     '/en/',
     '/en/projects/',

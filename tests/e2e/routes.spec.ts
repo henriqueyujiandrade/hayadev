@@ -29,7 +29,14 @@ test.describe('routes', () => {
   });
 
   test('renders without console or page errors, including CSP violations', async ({ page }) => {
-    for (const path of ['/', '/projetos/hidden-object/', '/artigos/', '/en/', '/es/sobre/', '/contato/']) {
+    for (const path of [
+      '/',
+      '/projetos/hidden-object/',
+      '/artigos/',
+      '/en/',
+      '/es/sobre/',
+      '/contato/',
+    ]) {
       const errors = collectPageErrors(page);
       await page.goto(path);
       await page.waitForLoadState('networkidle');
