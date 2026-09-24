@@ -154,7 +154,7 @@ export const es: UIDictionary = {
 
   contact: {
     title: 'Contacto',
-    lead: 'Una propuesta de trabajo, una duda sobre un proyecto o solo una charla sobre backend — elige el canal que prefieras.',
+    lead: 'Una propuesta de trabajo, una duda sobre un proyecto o una oportunidad profesional — elige el canal que prefieras.',
     metaDescription:
       'Contacta con Henrique por correo, WhatsApp, LinkedIn o GitHub. Desarrollador backend y full stack en São Paulo.',
     cta: 'Enviar mensaje',

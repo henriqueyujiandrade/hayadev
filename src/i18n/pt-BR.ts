@@ -153,7 +153,7 @@ export const ptBR: UIDictionary = {
 
   contact: {
     title: 'Contato',
-    lead: 'Proposta de trabalho, dúvida sobre um projeto ou só uma conversa sobre backend — escolha o canal que preferir.',
+    lead: 'Proposta de trabalho, dúvida sobre um projeto ou oportunidade profissional — escolha o canal que preferir.',
     metaDescription:
       'Fale com Henrique por e-mail, WhatsApp, LinkedIn ou GitHub. Desenvolvedor backend e full stack em São Paulo.',
     cta: 'Enviar mensagem',
