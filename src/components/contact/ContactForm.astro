@@ -1,11 +1,12 @@
 ---
 import { Check, Copy, Send } from '@lucide/astro';
+import { contactForm } from '@config/contact';
 import type { Locale } from '@config/locales';
 import { useTranslations } from '@i18n/index';
 
 interface Props {
   locale: Locale;
-  /** Address the composed email is sent to. */
+  /** Address offered to write to directly if delivery fails. */
   email: string;
 }
 
@@ -18,31 +19,61 @@ const fieldClass = [
   'transition-colors hover:border-ink-muted focus:border-accent focus:outline-none',
   'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
 ].join(' ');
+
+const labelClass = 'text-sm font-medium text-ink';
 ---
 
 {/*
-  The site is static, so this form sends nothing by itself: on submit it
-  composes a `mailto:` URL with the subject and message and hands it to the
-  visitor's mail app. No backend, no third-party form service, no change to the
-  CSP. The script is a few lines of DOM work, so it stays vanilla rather than
-  shipping the React runtime for one form.
+  Submissions go to Web3Forms (see src/config/contact.ts), which emails them to
+  the site owner; the visitor's `email` field becomes the reply-to address.
 
-  `form-action 'self'` in the CSP would block a native `action="mailto:"`
-  submission, which is why the URL is built in the script. Without JavaScript
-  the form is replaced by the plain address.
+  It is a plain HTML form posting to the API, so it works without JavaScript
+  (the visitor lands on the Web3Forms confirmation page). The script upgrades it
+  to an in-page submission with a result message. It is a few lines of DOM work,
+  so it stays vanilla rather than shipping the React runtime for one form.
 */}
-<noscript>
-  <p class="text-ink-muted">
-    {t.contact.noScript}{' '}
-    <a href={`mailto:${email}`} class="font-medium text-accent underline underline-offset-4">
-      {email}
-    </a>
-  </p>
-</noscript>
+<form data-contact-form action={contactForm.endpoint} method="POST" class="flex flex-col gap-5">
+  <input type="hidden" name="access_key" value={contactForm.accessKey} />
+  <input type="hidden" name="from_name" value={contactForm.fromName} />
+  {/* Honeypot: invisible to people, ticked by bots, rejected by Web3Forms. */}
+  <input type="checkbox" name="botcheck" class="hidden" tabindex="-1" autocomplete="off" />
 
-<form data-contact-form data-to={email} class="contact-form flex flex-col gap-5">
+  <div class="grid gap-5 sm:grid-cols-2">
+    <div class="flex flex-col gap-2">
+      <label for="contact-name" class={labelClass}>
+        {t.contact.nameLabel}
+      </label>
+      <input
+        id="contact-name"
+        name="name"
+        type="text"
+        required
+        maxlength="100"
+        autocomplete="name"
+        placeholder={t.contact.namePlaceholder}
+        class={fieldClass}
+      />
+    </div>
+
+    <div class="flex flex-col gap-2">
+      <label for="contact-email" class={labelClass}>
+        {t.contact.emailFieldLabel}
+      </label>
+      <input
+        id="contact-email"
+        name="email"
+        type="email"
+        required
+        maxlength="254"
+        autocomplete="email"
+        placeholder={t.contact.emailPlaceholder}
+        class={fieldClass}
+      />
+    </div>
+  </div>
+
   <div class="flex flex-col gap-2">
-    <label for="contact-subject" class="text-sm font-medium text-ink">
+    <label for="contact-subject" class={labelClass}>
       {t.contact.subjectLabel}
     </label>
     <input
@@ -58,7 +89,7 @@ const fieldClass = [
   </div>
 
   <div class="flex flex-col gap-2">
-    <label for="contact-message" class="text-sm font-medium text-ink">
+    <label for="contact-message" class={labelClass}>
       {t.contact.messageLabel}
     </label>
     <textarea
@@ -66,7 +97,7 @@ const fieldClass = [
       name="message"
       required
       rows="8"
-      maxlength="1800"
+      maxlength="5000"
       placeholder={t.contact.messagePlaceholder}
       class:list={[fieldClass, 'min-h-40 resize-y leading-relaxed']}
     ></textarea>
@@ -75,20 +106,29 @@ const fieldClass = [
   <div>
     <button
       type="submit"
-      class="inline-flex items-center justify-center gap-2 rounded-md border border-accent bg-accent px-4 py-2 text-[0.9375rem] font-medium text-accent-contrast transition-colors duration-150 hover:border-accent-hover hover:bg-accent-hover"
+      data-label-sending={t.contact.sending}
+      class="inline-flex items-center justify-center gap-2 rounded-md border border-accent bg-accent px-4 py-2 text-[0.9375rem] font-medium text-accent-contrast transition-colors duration-150 hover:border-accent-hover hover:bg-accent-hover disabled:cursor-wait disabled:opacity-70"
     >
       <Send class="size-4" aria-hidden="true" />
-      {t.contact.submit}
+      <span data-submit-label>{t.contact.submit}</span>
     </button>
   </div>
 
-  <div data-contact-status role="status" class="text-sm text-ink-muted">
+  <div role="status" class="text-sm">
+    <p
+      hidden
+      data-contact-success
+      class="rounded-md border border-accent-line bg-accent-soft p-4 font-medium text-accent"
+    >
+      {t.contact.success}
+    </p>
+
     <div
       hidden
-      data-contact-fallback
-      class="flex flex-col gap-3 rounded-md border border-border bg-surface-muted/50 p-4"
+      data-contact-error
+      class="flex flex-col gap-3 rounded-md border border-border bg-surface-muted/50 p-4 text-ink-muted"
     >
-      <p>{t.contact.fallback}</p>
+      <p>{t.contact.error}</p>
       <div class="flex flex-wrap items-center gap-3">
         <a
           href={`mailto:${email}`}
@@ -98,7 +138,7 @@ const fieldClass = [
         </a>
         <button
           type="button"
-          data-copy-email
+          data-copy-email={email}
           data-label-copied={t.contact.copied}
           class="inline-flex items-center gap-1.5 rounded-md border border-border-control bg-surface px-3 py-1.5 text-sm font-medium text-ink transition-colors hover:border-ink-muted hover:bg-surface-muted"
         >
@@ -112,11 +152,6 @@ const fieldClass = [
 </form>
 
 <style>
-  /* Hidden until the script is known to run; the <noscript> note covers the rest. */
-  .contact-form:not([data-ready]) {
-    display: none;
-  }
-
   .copied-icon {
     display: none;
   }
@@ -131,40 +166,54 @@ const fieldClass = [
 </style>
 
 <script>
-  import { mailtoUrl } from '@utils/contact';
-
   for (const form of document.querySelectorAll<HTMLFormElement>('[data-contact-form]')) {
-    const to = form.dataset.to ?? '';
-    const fallback = form.querySelector<HTMLElement>('[data-contact-fallback]');
+    const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]');
+    const submitLabel = form.querySelector('[data-submit-label]');
+    const idleLabel = submitLabel?.textContent ?? '';
+    const success = form.querySelector<HTMLElement>('[data-contact-success]');
+    const failure = form.querySelector<HTMLElement>('[data-contact-error]');
     const copy = form.querySelector<HTMLButtonElement>('[data-copy-email]');
 
-    form.dataset.ready = '';
+    function setSending(sending: boolean): void {
+      if (submit) submit.disabled = sending;
+      if (submitLabel) {
+        submitLabel.textContent = sending ? (submit?.dataset.labelSending ?? idleLabel) : idleLabel;
+      }
+    }
 
-    form.addEventListener('submit', (event) => {
+    /* The browser has already run the native validation when `submit` fires. */
+    form.addEventListener('submit', async (event) => {
       event.preventDefault();
-      if (!form.reportValidity()) return;
+      if (success) success.hidden = true;
+      if (failure) failure.hidden = true;
+      setSending(true);
 
-      const data = new FormData(form);
-      const url = mailtoUrl({
-        to,
-        subject: String(data.get('subject') ?? ''),
-        body: String(data.get('message') ?? ''),
-      });
+      let delivered = false;
+      try {
+        const response = await fetch(form.action, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify(Object.fromEntries(new FormData(form))),
+        });
+        const result = (await response.json()) as { success?: boolean };
+        delivered = response.ok && result.success === true;
+      } catch {
+        /* Network failure or a non-JSON answer: handled as a failed delivery. */
+      }
 
-      /* Exposed for the end-to-end suite, which cannot follow a mailto: navigation. */
-      form.dataset.mailto = url;
-      window.location.href = url;
-
-      /*
-       * There is no way to know whether a mail app picked the link up, so the
-       * way out is always offered afterwards rather than guessed at.
-       */
-      if (fallback) fallback.hidden = false;
+      setSending(false);
+      if (delivered) {
+        form.reset();
+        if (success) success.hidden = false;
+      } else if (failure) {
+        /* The typed message is kept, so a retry does not mean writing it again. */
+        failure.hidden = false;
+      }
     });
 
     copy?.addEventListener('click', async () => {
       try {
-        await navigator.clipboard.writeText(to);
+        await navigator.clipboard.writeText(copy.dataset.copyEmail ?? '');
       } catch {
         /* Clipboard unavailable: the address is visible right beside the button. */
         return;

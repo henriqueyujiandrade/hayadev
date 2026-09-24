@@ -1,6 +1,17 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
+import { contactForm } from '../../src/config/contact';
 import { person } from '../../src/config/person';
+
+/** Fills every required field of the contact form. */
+async function fillForm(page: Page) {
+  const form = page.locator('[data-contact-form]');
+  await form.getByLabel('Nome').fill('Ada Lovelace');
+  await form.getByLabel('Seu e-mail').fill('ada@example.com');
+  await form.getByLabel('Assunto').fill('Proposta de projeto');
+  await form.getByLabel('Mensagem').fill('Olá!\nTudo bem?');
+  return form;
+}
 
 test.describe('contact page', () => {
   test('is linked from the site navigation', async ({ page }) => {
@@ -15,31 +26,60 @@ test.describe('contact page', () => {
     await expect(page.locator('h1')).toHaveText('Contato');
   });
 
-  test('composes a prefilled email from the subject and message', async ({ page }) => {
+  test('delivers the message through the form service and confirms it', async ({ page }) => {
+    /* Never reach the real service from a test run: it would send a real email. */
+    let payload: Record<string, unknown> | undefined;
+    await page.route(contactForm.endpoint, async (route) => {
+      payload = route.request().postDataJSON() as Record<string, unknown>;
+      await route.fulfill({ json: { success: true, message: 'Email sent successfully!' } });
+    });
+
     await page.goto('/contato/');
+    const form = await fillForm(page);
+    await form.getByRole('button', { name: 'Enviar mensagem' }).click();
 
-    const form = page.locator('[data-contact-form]');
-    await form.getByLabel('Assunto').fill('Proposta & ideia');
-    await form.getByLabel('Mensagem').fill('Olá!\nTudo bem?');
-    await form.getByRole('button', { name: 'Abrir no meu e-mail' }).click();
-
-    await expect(form).toHaveAttribute(
-      'data-mailto',
-      `mailto:${person.email}?subject=Proposta%20%26%20ideia&body=Ol%C3%A1!%0D%0ATudo%20bem%3F`,
-    );
-    /* Offered afterwards for visitors whose device has no mail app. */
-    await expect(form.getByRole('button', { name: 'Copiar e-mail' })).toBeVisible();
+    await expect(form.getByText(/Mensagem enviada/)).toBeVisible();
+    expect(payload).toMatchObject({
+      access_key: contactForm.accessKey,
+      from_name: contactForm.fromName,
+      name: 'Ada Lovelace',
+      email: 'ada@example.com',
+      subject: 'Proposta de projeto',
+      message: 'Olá!\nTudo bem?',
+    });
+    expect(payload).not.toHaveProperty('botcheck');
+    await expect(form.getByLabel('Mensagem')).toHaveValue('');
   });
 
-  test('does not compose anything while a required field is empty', async ({ page }) => {
+  test('keeps the message and offers the address when delivery fails', async ({ page }) => {
+    await page.route(contactForm.endpoint, (route) =>
+      route.fulfill({ status: 500, json: { success: false, message: 'Server error' } }),
+    );
+
     await page.goto('/contato/');
+    const form = await fillForm(page);
+    await form.getByRole('button', { name: 'Enviar mensagem' }).click();
 
-    const form = page.locator('[data-contact-form]');
-    await form.getByLabel('Assunto').fill('Só o assunto');
-    await form.getByRole('button', { name: 'Abrir no meu e-mail' }).click();
+    await expect(form.getByText(/Não foi possível enviar/)).toBeVisible();
+    await expect(form.getByRole('button', { name: 'Copiar e-mail' })).toBeVisible();
+    await expect(form.getByLabel('Mensagem')).toHaveValue('Olá!\nTudo bem?');
+    await expect(form.getByRole('button', { name: 'Enviar mensagem' })).toBeEnabled();
+  });
 
-    await expect(form).not.toHaveAttribute('data-mailto', /.+/);
+  test('sends nothing while a required field is empty', async ({ page }) => {
+    let requests = 0;
+    await page.route(contactForm.endpoint, (route) => {
+      requests += 1;
+      return route.abort();
+    });
+
+    await page.goto('/contato/');
+    const form = await fillForm(page);
+    await form.getByLabel('Mensagem').fill('');
+    await form.getByRole('button', { name: 'Enviar mensagem' }).click();
+
     await expect(form.getByLabel('Mensagem')).toBeFocused();
+    expect(requests).toBe(0);
   });
 
   test('lists every configured channel, opening external ones safely', async ({ page }) => {

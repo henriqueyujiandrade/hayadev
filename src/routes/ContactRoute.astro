@@ -9,7 +9,7 @@ import { person } from '@config/person';
 import { getSocialLinks, type SocialPlatform } from '@config/social';
 import PageLayout from '@layouts/PageLayout.astro';
 import { useTranslations } from '@i18n/index';
-import { displayUrl, formatPhone, mailtoUrl, whatsappUrl } from '@utils/contact';
+import { displayUrl, formatPhone, whatsappUrl } from '@utils/contact';
 import { homePath, localizedPath } from '@utils/routes';
 import { buildAlternates, defaultOgImage, formatTitle, pathsForAllLocales } from '@utils/seo';
 import { breadcrumbSchema, graph, personSchema, type BreadcrumbItem } from '@utils/structured-data';
@@ -61,7 +61,7 @@ const channels = [
           label: t.contact.emailLabel,
           value: person.email,
           hint: t.contact.emailHint,
-          href: mailtoUrl({ to: person.email }),
+          href: `mailto:${person.email}`,
           Icon: Mail,
         },
       ]

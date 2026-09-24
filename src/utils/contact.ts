@@ -1,37 +1,7 @@
 /**
- * Builders for the contact channels.
- *
- * The site has no backend, so the contact form does not send anything itself:
- * it composes a `mailto:` URL and hands it to the visitor's own mail app. These
- * functions are shared by that script and the server-rendered page, and are
- * pure so the encoding rules can be unit tested.
+ * Builders for the contact channels listed on the Contact page. Pure, so the
+ * encoding rules can be unit tested.
  */
-
-export interface MailDraft {
-  to: string;
-  subject?: string;
-  body?: string;
-}
-
-/**
- * Builds a `mailto:` URL with a prefilled subject and body.
- *
- * RFC 6068 wants line breaks as CRLF, so they are normalized before encoding —
- * a bare `\n` is shown as one line by some desktop clients. Empty fields are
- * left out rather than sent as `subject=`.
- */
-export function mailtoUrl({ to, subject = '', body = '' }: MailDraft): string {
-  const params = (
-    [
-      ['subject', subject.trim()],
-      ['body', body.trim().replace(/\r?\n/g, '\r\n')],
-    ] as const
-  )
-    .filter(([, value]) => value.length > 0)
-    .map(([key, value]) => `${key}=${encodeURIComponent(value)}`);
-
-  return `mailto:${to}${params.length > 0 ? `?${params.join('&')}` : ''}`;
-}
 
 /** Keeps only the digits of a phone number, which is what `wa.me` expects. */
 function digitsOf(phone: string): string {

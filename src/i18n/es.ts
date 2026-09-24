@@ -158,17 +158,21 @@ export const es: UIDictionary = {
     metaDescription:
       'Contacta con Henrique por correo, WhatsApp, LinkedIn o GitHub. Desarrollador backend y full stack en São Paulo.',
     cta: 'Enviar mensaje',
-    formTitle: 'Enviar un correo',
-    formLead:
-      'Escribe el asunto y el mensaje. Al enviarlo, tu app de correo se abre con todo completado — solo tienes que revisarlo y enviarlo.',
+    formTitle: 'Enviar un mensaje',
+    formLead: 'El mensaje llega directamente a mi correo, y respondo a la dirección que indiques.',
+    nameLabel: 'Nombre',
+    namePlaceholder: 'Tu nombre',
+    emailFieldLabel: 'Tu correo',
+    emailPlaceholder: 'tu@ejemplo.com',
     subjectLabel: 'Asunto',
     subjectPlaceholder: 'Ej.: Propuesta de proyecto',
     messageLabel: 'Mensaje',
     messagePlaceholder: 'Cuéntame un poco sobre lo que necesitas.',
-    submit: 'Abrir en mi correo',
-    fallback:
-      'Si no se abrió nada, puede que tu dispositivo no tenga una app de correo configurada. Copia la dirección y escribe desde tu proveedor:',
-    noScript: 'El formulario necesita JavaScript. Puedes escribir directamente a:',
+    submit: 'Enviar mensaje',
+    sending: 'Enviando…',
+    success: '¡Mensaje enviado! Gracias por escribir — respondo pronto.',
+    error:
+      'No se pudo enviar ahora. Inténtalo de nuevo en unos instantes o escribe directamente a:',
     copyEmail: 'Copiar correo',
     copied: 'Correo copiado',
     channelsTitle: 'Canales',

@@ -1,26 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { displayUrl, formatPhone, mailtoUrl, whatsappUrl } from '@utils/contact';
-
-describe('mailtoUrl', () => {
-  it('prefills the subject and body, percent-encoded', () => {
-    expect(mailtoUrl({ to: 'me@example.com', subject: 'Olá & tchau', body: 'Linha 1?' })).toBe(
-      'mailto:me@example.com?subject=Ol%C3%A1%20%26%20tchau&body=Linha%201%3F',
-    );
-  });
-
-  it('sends line breaks as CRLF, whatever the textarea produced', () => {
-    const url = mailtoUrl({ to: 'me@example.com', body: 'a\nb\r\nc' });
-    expect(url).toBe('mailto:me@example.com?body=a%0D%0Ab%0D%0Ac');
-  });
-
-  it('leaves out empty or whitespace-only fields', () => {
-    expect(mailtoUrl({ to: 'me@example.com' })).toBe('mailto:me@example.com');
-    expect(mailtoUrl({ to: 'me@example.com', subject: '  ', body: 'Oi' })).toBe(
-      'mailto:me@example.com?body=Oi',
-    );
-  });
-});
+import { displayUrl, formatPhone, whatsappUrl } from '@utils/contact';
 
 describe('whatsappUrl', () => {
   it('links to wa.me with digits only', () => {

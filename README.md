@@ -255,10 +255,13 @@ Filling these in adds the icons to the header, footer and About page, adds the c
 the home page, and adds the URLs to the `Person` structured data as `sameAs`. Leaving them empty
 removes those elements entirely — the site never ships a placeholder.
 
-The Contact page (`/contato/`) lists every configured channel. Its form has no backend: on submit it
-builds a `mailto:` URL with the subject and message (`src/utils/contact.ts`) and opens the visitor's
-mail app, then offers the address with a copy button for devices without one. The WhatsApp number is
-deliberately published only there — not in the footer or the structured data.
+The Contact page (`/contato/`) lists every configured channel. Its form is delivered by
+[Web3Forms](https://web3forms.com): it posts to their API, which emails the message to the address
+registered with the access key in `src/config/contact.ts`, with the visitor's address as reply-to.
+The key is public by design — it can only send to that inbox. The API origin is allowed in the CSP
+(`connect-src` and `form-action`) in `astro.config.ts`; the end-to-end tests mock it, so they never
+send real email. The WhatsApp number is deliberately published only on that page — not in the footer
+or the structured data.
 
 ### Using a full name
 

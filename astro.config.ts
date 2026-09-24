@@ -4,6 +4,7 @@ import sitemap from '@astrojs/sitemap';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'astro/config';
 
+import { contactForm } from './src/config/contact';
 import { LOCALES, DEFAULT_LOCALE } from './src/config/locales';
 import { siteConfig } from './src/config/site';
 
@@ -12,6 +13,9 @@ import { siteConfig } from './src/config/site';
  * No adapter is installed on purpose — Vercel serves `dist/` directly. An adapter
  * should only be added if a real SSR/on-demand requirement appears.
  */
+/** Web3Forms receives the contact form; see src/config/contact.ts. */
+const CONTACT_FORM_ORIGIN = new URL(contactForm.endpoint).origin;
+
 export default defineConfig({
   site: siteConfig.url,
   output: 'static',
@@ -63,9 +67,9 @@ export default defineConfig({
         "default-src 'self'",
         "img-src 'self' data:",
         "font-src 'self'",
-        "connect-src 'self'",
+        `connect-src 'self' ${CONTACT_FORM_ORIGIN}`,
         "base-uri 'self'",
-        "form-action 'self'",
+        `form-action 'self' ${CONTACT_FORM_ORIGIN}`,
         "object-src 'none'",
         "manifest-src 'self'",
       ],

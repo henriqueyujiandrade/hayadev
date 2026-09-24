@@ -163,15 +163,19 @@ export interface UIDictionary {
     cta: string;
     formTitle: string;
     formLead: string;
+    nameLabel: string;
+    namePlaceholder: string;
+    emailFieldLabel: string;
+    emailPlaceholder: string;
     subjectLabel: string;
     subjectPlaceholder: string;
     messageLabel: string;
     messagePlaceholder: string;
     submit: string;
-    /** Shown after submitting, for visitors without a configured mail app. */
-    fallback: string;
-    /** Shown instead of the form when JavaScript is unavailable. */
-    noScript: string;
+    sending: string;
+    success: string;
+    /** Shown when delivery fails, followed by the address to write to directly. */
+    error: string;
     copyEmail: string;
     copied: string;
     channelsTitle: string;
