@@ -1,6 +1,6 @@
 ---
 title: Zendino
-description: Juego de biofeedback respiratorio para niños, en React y Canvas, en el que un árbol guía la respiración y un dinosaurio reacciona a la frecuencia cardíaca. Desarrollado en Self.
+description: Juego de biofeedback respiratorio para niños, desarrollado en React y Canvas en Self Aplicações Tecnológicas para Saúde, Educação e Bem-Estar.
 shortDescription: Juego de biofeedback respiratorio para niños, con sensor de frecuencia cardíaca.
 projectType: game
 status: completed
@@ -11,7 +11,6 @@ technologies:
   - Canvas
   - Vite
   - Web Bluetooth
-  - Styled Components
 year: 2026
 featured: true
 confidential: true
@@ -19,112 +18,67 @@ caseStudy: true
 order: 20
 ---
 
-**Zendino** es un juego de biofeedback respiratorio para niños. El jugador respira
-al ritmo que propone la animación, y un sensor de frecuencia cardíaca, opcional,
-mide la variabilidad de los latidos: un dinosaurio reacciona a la calidad de la
-respiración, de triste a satisfecho. Fue desarrollado en Self y corre en el
-navegador, embebido en el portal de la plataforma.
+## Sobre el proyecto
 
-Lo que sigue son las decisiones técnicas detrás de él.
+Zendino es un juego de biofeedback respiratorio en el que el niño interactúa con
+un dinosaurio mientras sigue un ejercicio de respiración guiada.
 
-## Una guía que forma parte del escenario
+El juego utiliza animaciones y elementos del escenario como feedback visual para
+hacer la actividad más intuitiva y mantener la experiencia adecuada al público
+infantil.
 
-El juego tiene dos modos, y en ambos la guía de la respiración es el propio
-escenario. En el **modo principal**, un árbol crece mientras el niño inspira, se
-encoge mientras espira y queda quieto en las pausas. En el **modo alternativo**, el
-dinosaurio respira en ciclo, los árboles se mecen y un flujo de aire sale de su nariz
-o de su boca.
+Desarrollé la lógica del juego, el sistema de animación, la integración con un
+sensor de frecuencia cardíaca y la comunicación con la plataforma que ejecuta las
+sesiones.
 
-Por debajo, el árbol es una pequeña máquina de estados — creciendo, pausa llena,
-encogiendo, pausa vacía —, y su escala sigue una curva suavizada, y no lineal, para
-que el movimiento no parezca mecánico. El indicador de respiración del HUD no se
-calcula en paralelo: lee el estado de la propia guía, así que los dos no pueden
-divergir.
+## Principales desafíos técnicos
 
-## Una recompensa que no castiga
+- Desarrollo de una experiencia interactiva con **Canvas**.
+- Animaciones sincronizadas con el ciclo respiratorio.
+- Integración con sensores de frecuencia cardíaca mediante **Web Bluetooth**.
+- Procesamiento de datos fisiológicos en el navegador.
+- Distintos niveles de dificultad para el biofeedback.
+- Funcionamiento con o sin sensor conectado.
+- Gestión de la pérdida de conexión sin interrumpir la experiencia.
+- Sistema de estados para controlar las distintas etapas de la partida.
+- Renderizado optimizado para mantener una experiencia fluida.
+- Tutorial que reutiliza los mismos componentes y la lógica de renderizado del
+  juego.
 
-La emoción del dinosaurio es el canal de recompensa. La lógica que la decide está
-hecha de funciones puras, sin nada de dibujo adentro. Con sensor, parte del nivel de
-respiración medido, y una **política de dificultad** decide cuánto puede retroceder
-la emoción:
+## Arquitectura
 
-```ts
-type Policy = 'easy' | 'medium' | 'hard';
-type Reading = { measured: number; current: number; wellBelowBaseline: boolean };
+La lógica del juego se separó de la capa de renderizado, lo que permite probar
+las reglas de comportamiento de forma independiente de los elementos visuales.
 
-// Dada la lectura, cuándo puede cambiar la emoción del dinosaurio.
-function nextLevel(policy: Policy, r: Reading) {
-  if (policy === 'hard') return r.measured; // sigue la medida
-  if (policy === 'easy') return Math.max(r.measured, r.current); // solo avanza
-  if (r.measured >= r.current) return r.measured; // medio: avanza libremente
-  return r.wellBelowBaseline ? r.measured : r.current; // retrocede con margen
-}
-```
+El bucle de animación usa Canvas para controlar el renderizado fotograma a
+fotograma, mientras que React se encarga de la estructura de la aplicación y de
+la gestión de los estados de alto nivel.
 
-En el modo fácil, una mala respiración nunca empeora al dinosaurio. En el medio,
-avanza libremente y solo retrocede cuando la medida cae bien por debajo de la
-referencia de la calibración, lo que evita que oscile con cada caída momentánea. En
-el difícil, acompaña la medida.
+La experiencia también se desarrolló para distintos tamaños de pantalla,
+manteniendo proporciones y posicionamiento coherentes.
 
-**Sin sensor, el juego no se queda sin recompensa.** Un cronograma hace avanzar la
-emoción con el progreso de la sesión. Está indexado por la posición **absoluta** en
-la sesión, y no por el tiempo restante, así que pasar al modo automático a mitad de
-la partida no empieza de cero. Y hay un **piso**: si el sensor falla con el
-dinosaurio ya feliz, el cronograma diría «triste», y el niño sería castigado por una
-falla de hardware. El piso conserva lo que ya conquistó. La misma lógica vale cuando
-la señal se pierde por demasiado tiempo o la conexión se cae: la sesión continúa, en
-modo automático.
+## Biofeedback
 
-## Transiciones sin saltos
+El juego puede recibir datos de un sensor de frecuencia cardíaca mediante **Web
+Bluetooth**.
 
-En un juego pensado para calmar, un cambio brusco de imagen llama la atención sobre
-sí mismo. Por eso casi nada cambia de inmediato:
+Los intervalos entre latidos se procesan en el navegador y se utilizan para
+generar un indicador de biofeedback que influye en el comportamiento del
+personaje.
 
-- una nueva emoción queda **pendiente** hasta que la animación actual llega al
-  cuadro cero, y se descarta si la medida vuelve al valor anterior antes de eso;
-- al final de la sesión, el dinosaurio completa el ciclo en curso y se detiene en el
-  cuadro cero, y el árbol se asienta en el punto medio del zoom, detectado por el
-  cruce en ambos sentidos, antes de empezar la animación final;
-- una pausa congela la escena en lugar de borrarla, y al reanudar se reinicia el
-  reloj del bucle, para que el tiempo detenido no se convierta en un salto.
+Cuando el sensor no está disponible o se interrumpe la conexión, el juego tiene un
+comportamiento alternativo que mantiene la sesión en marcha.
 
-## Canvas en resolución fija
+## Lo que demuestra este proyecto
 
-Todo el dibujo ocurre en un canvas de resolución lógica fija, escalado a la ventana
-mediante una transformación, con la proporción mantenida y el conjunto centrado. Así,
-posiciones, tamaños y desplazamientos viven en un único sistema de coordenadas, y el
-juego no recalcula el diseño para cada tamaño de pantalla.
+Este proyecto combina **desarrollo de juegos, frontend, animación, procesamiento
+de datos fisiológicos e integración con hardware Bluetooth**.
 
-El bucle de dibujo vive fuera del ciclo de vida de React y lee el estado mediante
-refs, y el indicador de respiración sigue el mismo camino: el bucle escribe el estado
-de la guía en una ref compartida, y el indicador, con su propio bucle, cambia el
-estilo del elemento directamente en el DOM. El relleno, actualizado en cada cuadro,
-no pasa por el estado de React, así que no cuesta ninguna re-renderización. Cada
-estado del juego — pre-juego, jugando, pausado, fin — tiene su propia rama de dibujo.
-Las capas del fondo que usan filtro se prerrenderizan en un `OffscreenCanvas` y solo
-se rehacen cuando cambia el tamaño, y el flujo de aire del modo alternativo es un
-conjunto fijo de partículas con fase con signo: el signo dice si convergen hacia el
-origen, al inspirar, o se alejan de él, al espirar.
+Más que implementar una interfaz interactiva, el desafío fue convertir reglas de
+biofeedback en una experiencia visual sencilla y comprensible para niños.
 
-## Un tutorial hecho con el propio juego
+**Proyecto bajo confidencialidad. La información presentada se ha limitado
+deliberadamente a aspectos técnicos generales, sin exponer código, datos de
+usuarios ni detalles internos del producto.**
 
-El tutorial no es una animación aparte. Monta el mismo dinosaurio, los mismos
-árboles, el mismo fondo y las mismas partículas del juego, dirigidos por pasos. Como
-es el mismo código de dibujo, lo que el tutorial muestra es lo que el juego hace.
-
-## Biofeedback y plataforma
-
-La capa de biofeedback viene del template de la línea de juegos terapéuticos de Self
-y se reutilizó. La variabilidad de la frecuencia cardíaca (RMSSD) se calcula en el
-navegador a partir de los intervalos entre los latidos del sensor, vía Web Bluetooth,
-se compara con una referencia de la calibración y se reduce a un nivel, el mismo que
-alimenta la emoción del dinosaurio. El sensor es opcional. El juego corre embebido en
-el portal de la plataforma, que crea la sesión y recibe el resultado de la partida.
-Es la capa de juego la que este texto describe.
-
-## Qué demuestra este proyecto
-
-Desde el punto de vista de la ingeniería, el interés aquí no es el dinosaurio. Es que
-la experiencia de un niño — una recompensa que no castiga, transiciones sin saltos, un
-sensor que puede fallar — se tradujo en reglas pequeñas y aisladas del dibujo, sobre
-un bucle de renderizado simple y predecible.
+**Proyecto concluido en 2026.**
