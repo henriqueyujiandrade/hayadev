@@ -95,7 +95,7 @@ const projects = defineCollection({
         projectType: z.enum(PROJECT_TYPES),
         status: z.enum(PROJECT_STATUSES),
         /** The person's role on the project, in the entry's language. */
-        role: text(2, 80),
+        role: text(2, 100),
         technologies: z.array(text(1, 32)).min(1).max(16),
         year: z.number().int().min(2000).max(2100),
         featured: z.boolean().default(false),
