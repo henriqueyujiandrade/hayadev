@@ -82,15 +82,36 @@ test.describe('article page', () => {
     expect(copied).toBe(`https://hayadev.dev${ARTICLE}`);
   });
 
-  test('has no detectable WCAG violations', async ({ page }) => {
+  test('code blocks carry both theme palettes for a CSS-only theme switch', async ({ page }) => {
     await page.goto(ARTICLE);
-    await page.waitForLoadState('networkidle');
 
-    const { violations } = await new AxeBuilder({ page })
-      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
-      .analyze();
+    const code = page.locator('pre.astro-code').first();
+    await expect(code).toBeVisible();
 
-    expect(violations.map((violation) => violation.id)).toEqual([]);
+    const style = await code.getAttribute('style');
+    expect(style).toContain('--shiki-light');
+    expect(style).toContain('--shiki-dark');
+  });
+
+  /*
+   * Run in both schemes: the articles hold the only code blocks on the site,
+   * and syntax-highlighted tokens are where contrast is easiest to lose.
+   */
+  test('has no detectable WCAG violations in light or dark mode', async ({ page }) => {
+    for (const colorScheme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme });
+      await page.goto(ARTICLE);
+      await page.waitForLoadState('networkidle');
+
+      const { violations } = await new AxeBuilder({ page })
+        .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
+        .analyze();
+
+      expect(
+        violations.map((violation) => violation.id),
+        colorScheme,
+      ).toEqual([]);
+    }
   });
 });
 

@@ -108,18 +108,6 @@ test.describe('content rendering', () => {
     expect(html).toContain('Onde estou?');
     expect(html).toContain('perspectiva');
     expect(html).toContain('<h2');
-    expect(html).toContain('astro-code');
-  });
-
-  test('code blocks carry both theme palettes for a CSS-only theme switch', async ({ page }) => {
-    await page.goto('/projetos/hidden-object/');
-
-    const code = page.locator('pre.astro-code').first();
-    await expect(code).toBeVisible();
-
-    const style = await code.getAttribute('style');
-    expect(style).toContain('--shiki-light');
-    expect(style).toContain('--shiki-dark');
   });
 
   test('a project without a live or repository URL renders no dead buttons', async ({ page }) => {
