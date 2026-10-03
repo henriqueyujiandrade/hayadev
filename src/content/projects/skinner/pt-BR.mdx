@@ -1,11 +1,12 @@
 ---
 title: Skinner
-description: SaaS multi-tenant para gestão de clínicas de ABA, desenvolvido na Self.
+description: SaaS multi-tenant para gestão de clínicas de ABA, desenvolvido na Self Aplicações Tecnológicas para Saúde, Educação e Bem-Estar.
 shortDescription: SaaS multi-tenant para clínicas de ABA, com API, painel web e app de sessões.
 projectType: saas
 status: active
-role: Desenvolvimento Full Stack da API, painel web e aplicativo de execução de sessões
+role: Desenvolvimento Backend / Full Stack
 technologies:
+  - Python
   - TypeScript
   - NestJS
   - PostgreSQL
@@ -22,41 +23,60 @@ relatedArticles:
   - idempotencia-endpoints
 ---
 
-## O desafio
+## Sobre o projeto
 
-Construir uma plataforma capaz de suportar diferentes organizações, usuários e
-fluxos clínicos, mantendo isolamento de dados, consistência das regras de negócio
-e uma experiência simplificada para profissionais que executam sessões.
+O Skinner é uma plataforma SaaS voltada à gestão de operações clínicas de ABA,
+abrangendo organização de pacientes, profissionais, programas terapêuticos,
+sessões, tarefas, agendamentos e acompanhamento de evolução.
+
+Atuei no desenvolvimento da plataforma, principalmente na API e nas regras de
+negócio, participando também da construção das aplicações web e mobile.
 
 ## Principais desafios técnicos
 
-- Arquitetura multi-tenant com isolamento de dados por organização.
-- Centralização das regras de negócio no backend.
-- Motor de decisão determinístico e testável.
-- Operações idempotentes para lidar com requisições repetidas e concorrentes.
-- Controle de histórico das alterações e rastreabilidade dos resultados.
+- Arquitetura **multi-tenant**, com isolamento de dados entre organizações.
+- Modelagem de regras de negócio complexas no backend.
+- Controle de acesso baseado em organização e função do usuário.
+- Motor de decisão para gerenciamento do ciclo de vida de tarefas e programas.
+- Operações idempotentes e tratamento de concorrência.
 - Sistema de agendamento e recorrência.
-- Autenticação, autorização e controle de acesso por função.
-- Integração com Stripe para cobrança.
-- Aplicação web e aplicativo mobile consumindo o mesmo contrato de API.
-- Estratégias de testes automatizados para regras de negócio e integração.
+- Histórico e rastreabilidade das alterações realizadas na plataforma.
+- Autenticação e autorização entre diferentes clientes da aplicação.
+- Integração com **Stripe** para pagamentos e assinaturas.
+- Aplicações web e mobile consumindo a mesma API.
+- Testes automatizados para regras de negócio e fluxos críticos.
+
+## Arquitetura
+
+A API foi desenvolvida como um **monólito modular**, organizada por domínios de
+negócio para manter baixo acoplamento e facilitar a evolução da plataforma.
+
+As regras críticas são centralizadas no backend para garantir consistência entre
+os diferentes clientes da aplicação.
+
+O frontend web e o aplicativo mobile são estruturados de forma independente,
+compartilhando os contratos e serviços disponibilizados pela API.
 
 ## Engenharia
 
-A API foi estruturada como um monólito modular, com separação clara entre
-domínio, aplicação e infraestrutura.
+Durante o desenvolvimento, trabalhei em problemas envolvendo:
 
-A lógica crítica permanece no servidor para evitar divergência entre os
-diferentes clientes.
-
-No frontend, a arquitetura foi organizada por domínio, com validação dos
-contratos da API e regras para impedir dependências indevidas entre módulos.
+- consistência transacional;
+- concorrência e idempotência;
+- isolamento multi-tenant;
+- modelagem relacional;
+- autenticação e autorização;
+- integração com serviços externos;
+- testes unitários e de integração;
+- evolução incremental de uma aplicação em produção.
 
 ## Resultado
 
-O projeto me permitiu trabalhar de ponta a ponta em um SaaS real, envolvendo
-arquitetura de APIs, modelagem de dados, regras de negócio, autenticação,
-pagamentos, infraestrutura cloud, aplicações web/mobile e testes automatizados.
+O projeto proporcionou experiência prática no desenvolvimento e evolução de um
+**SaaS utilizado em ambiente real**, envolvendo arquitetura de APIs, banco de
+dados, regras de negócio, aplicações web/mobile, pagamentos e infraestrutura
+cloud.
 
-Projeto em desenvolvimento. Algumas informações técnicas e de negócio foram
-omitidas por confidencialidade.
+**Projeto sob confidencialidade. As informações apresentadas foram
+deliberadamente limitadas a aspectos técnicos gerais, sem exposição de código,
+dados de usuários ou detalhes internos do produto.**

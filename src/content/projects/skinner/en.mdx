@@ -1,11 +1,12 @@
 ---
 title: Skinner
-description: Multi-tenant SaaS for managing ABA clinics, built at Self.
+description: Multi-tenant SaaS for managing ABA clinics, built at Self Aplicações Tecnológicas para Saúde, Educação e Bem-Estar.
 shortDescription: Multi-tenant SaaS for ABA clinics, with an API, a web panel and a session app.
 projectType: saas
 status: active
-role: Full stack development of the API, the web panel and the session-execution app
+role: Backend / Full Stack Development
 technologies:
+  - Python
   - TypeScript
   - NestJS
   - PostgreSQL
@@ -22,40 +23,59 @@ relatedArticles:
   - idempotencia-endpoints
 ---
 
-## The challenge
+## About the project
 
-Build a platform able to support different organizations, users and clinical
-workflows while keeping data isolated, business rules consistent and the
-experience simple for the professionals who run sessions.
+Skinner is a SaaS platform for managing the clinical operations of ABA clinics,
+covering patients, professionals, therapy programs, sessions, tasks, scheduling
+and progress tracking.
+
+I worked on the development of the platform, mainly on the API and the business
+rules, and also took part in building the web and mobile applications.
 
 ## Key technical challenges
 
-- Multi-tenant architecture with data isolated per organization.
-- Business rules centralized in the backend.
-- A deterministic, testable decision engine.
-- Idempotent operations to handle repeated and concurrent requests.
-- Change history and traceability of results.
+- **Multi-tenant** architecture, with data isolated between organizations.
+- Modelling complex business rules in the backend.
+- Access control based on the organization and the user's role.
+- A decision engine managing the lifecycle of tasks and programs.
+- Idempotent operations and concurrency handling.
 - Scheduling and recurrence system.
-- Authentication, authorization and role-based access control.
-- Stripe integration for billing.
-- A web app and a mobile app consuming the same API contract.
-- Automated testing strategies for business rules and integration.
+- History and traceability of the changes made on the platform.
+- Authentication and authorization across the application's different clients.
+- **Stripe** integration for payments and subscriptions.
+- Web and mobile applications consuming the same API.
+- Automated tests for business rules and critical flows.
+
+## Architecture
+
+The API was built as a **modular monolith**, organized by business domain to
+keep coupling low and make the platform easier to evolve.
+
+Critical rules are centralized in the backend to guarantee consistency across the
+application's different clients.
+
+The web frontend and the mobile app are structured independently, sharing the
+contracts and services exposed by the API.
 
 ## Engineering
 
-The API is structured as a modular monolith, with a clear separation between
-domain, application and infrastructure.
+During development, I worked on problems involving:
 
-Critical logic stays on the server, so the different clients cannot diverge.
-
-On the frontend, the architecture is organized by domain, with validation of the
-API contracts and rules that prevent improper dependencies between modules.
+- transactional consistency;
+- concurrency and idempotency;
+- multi-tenant isolation;
+- relational modelling;
+- authentication and authorization;
+- integration with external services;
+- unit and integration tests;
+- incremental evolution of an application in production.
 
 ## Outcome
 
-The project let me work end to end on a real SaaS, covering API architecture,
-data modelling, business rules, authentication, payments, cloud infrastructure,
-web and mobile apps, and automated testing.
+The project gave me hands-on experience building and evolving a **SaaS used in a
+real environment**, covering API architecture, databases, business rules, web
+and mobile applications, payments and cloud infrastructure.
 
-The project is still in development. Some technical and business details have
-been left out for confidentiality.
+**Confidential project. The information presented has been deliberately limited
+to general technical aspects, without exposing code, user data or internal
+product details.**
