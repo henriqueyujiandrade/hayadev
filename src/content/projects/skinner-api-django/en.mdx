@@ -1,6 +1,6 @@
 ---
 title: Skinner API (Django)
-description: Django REST Framework and PostgreSQL backend of a multi-tenant SaaS platform for ABA clinics, with biofeedback games and PDF reports. Built at Self.
+description: Django REST Framework and PostgreSQL backend of a multi-tenant SaaS platform for ABA clinics, built at Self Aplicações Tecnológicas para Saúde, Educação e Bem-Estar.
 shortDescription: Multi-tenant Django REST Framework API for ABA clinics, with games and reports.
 projectType: api
 status: completed
@@ -21,126 +21,75 @@ caseStudy: true
 order: 25
 ---
 
-The **Skinner API (Django)** is the first generation of the Skinner backend, a SaaS
-platform for ABA clinics with biofeedback games. It is a monolith in Django REST
-Framework and PostgreSQL that manages clinics, patients, teams, the training and
-session cycle and PDF reports. It was built at Self and evolved from 2023 to 2026 —
-from May 2023 the database and the app structure were redone —, and it is now
-complete: the NestJS rewrites, the Skinner project and the KeepGames API, described
-on other pages, replace it.
+## About the project
 
-What follows are the technical decisions behind it and what it taught.
+Skinner API was the first generation of the Skinner platform's backend. The
+system managed organizations, patients, professionals, therapy programs,
+sessions, biofeedback games and reports.
 
-## A monolith per domain, isolated by clinic
+I worked on evolving the API and the database while the product was being
+developed and operated, dealing directly with business rules, data modelling and
+integrations.
 
-There are 27 Django apps, each with the same anatomy — models, views, serializers,
-routes and permissions —, and isolation between clinics is the rule that organizes
-everything else. Every entity belongs to a clinic:
+## Key technical challenges
 
-- The clinic **comes from the authenticated user**, never from the request body, and
-  is assigned by the server on creation.
-- Foreign keys received in a payload — patient, training, applicator — are validated
-  as belonging to the same clinic.
-- Global reference data is read-only, and "system" data, with no clinic, can be
-  read but not changed.
-- An isolation checklist, documented in the repository, applies to every new or
-  changed endpoint.
-- Roles are Django groups, with permission classes on top of the model permissions
-  and an ownership check of the object by clinic.
+- **Multi-tenant** architecture, with data isolated between organizations.
+- REST API development with Django REST Framework.
+- Modelling and evolving a PostgreSQL database.
+- Authentication, authorization and per-organization access control.
+- Business rules for training, sessions and patients.
+- Processing the physiological data coming from the games.
+- PDF report generation with data and charts.
+- File storage on AWS services.
+- Query optimization and preventing performance problems.
+- API documentation with OpenAPI.
+- Automated tests for the application's main flows.
 
-Authentication follows the same care: its own tokens, one per device and with an
-expiry, and login by e-mail or nickname regardless of case. Games have a separate
-authentication — a session key that they exchange for the context —, and that
-pattern was born here and kept in the rewrites.
+## Architecture
 
-## Queries that only pay when they need to
+The application was built as a **Django monolith organized by domain**, using
+Django REST Framework to expose the APIs.
 
-The project's rules require `select_related` and `prefetch_related` against N+1
-queries, with a DRF nuance: `get_queryset()` is also called on PATCH and DELETE, to
-find the object, so loading relations there makes a write pay for joins it does not
-use. The optimization applies only to reads, as in the user and patient views:
+Isolation between organizations was treated as a core requirement, with
+membership checks applied to every operation that handles client data.
 
-```python
-class ReportDetail(generics.RetrieveUpdateDestroyAPIView):
-    def get_queryset(self):
-        queryset = Report.objects.all()
-        # PATCH and DELETE also go through here, and do not need the joins.
-        if self.request.method == 'GET':
-            queryset = queryset.select_related('owner').prefetch_related('tags')
-        return queryset
-```
+The architecture evolved over time as new domains and features were added to the
+product.
 
-Simple, reusable serializers, one per app, avoid duplication and circular imports
-between serializers.
+## Reports and data processing
 
-## PDF reports, generated on the server
+The API was also responsible for processing the data from game matches and for
+generating PDF reports.
 
-Reports for matches with a sensor are a pipeline inside the API itself. The raw
-heart-rate signal is processed, with artifact filtering and RMSSD over a sliding
-window, and the Matplotlib charts are generated **in parallel**. The PDF, built with
-ReportLab in the clinic's visual identity, goes to S3, and the report is recorded
-with `update_or_create` on the patient, the game and the moment of the match, so
-generating it again duplicates nothing. There is a variant for matches without a
-sensor. Deployment is on AWS Lambda, with Zappa, a slim handler and plenty of
-memory.
+The reports combined application data with physiological information processed
+in the backend, including charts, and were stored on AWS infrastructure.
 
-## A schedule that never went live
+## Engineering
 
-There is a schedule in the repository — applicator availability, sessions,
-recurrences, unavailabilities and conflict detection between the applicator and the
-patient —, but it was added on top of the existing data model and never reached
-production or was validated in real use. With the database already too complex, the
-decision was not to push on with it: the new Skinner was built from scratch, with
-scheduling in the design from the start.
+During development, I worked mainly with:
 
-## An AI assistant scoped to the clinic
+- Python and Django;
+- Django REST Framework;
+- PostgreSQL;
+- database modelling and migrations;
+- multi-tenant architecture;
+- business rules;
+- query optimization;
+- data processing;
+- document and chart generation;
+- AWS Lambda and S3;
+- API documentation;
+- automated tests.
 
-There is an AI assistant for clinic management, which answers by querying the
-clinic's data through "tools". The safety point is the same as in the rest of the
-system: the clinic handed to the tools **comes from the authenticated user**, not
-from what the model returns. The tool-calling protocol was implemented by hand, over
-the text of the response.
+## How the project evolved
 
-## What it taught
+The experience gathered while evolving this first generation helped identify
+architectural improvements that were later applied to the platform's new
+versions, especially in separating business rules, modelling domain states,
+reusing structures and the testing strategy.
 
-Three years of real domain left concrete lessons, and each one became a decision in
-the rewrites:
+**Completed project, replaced by a new generation of the platform.**
 
-- **Domain rules in the transport layer.** A training's progression, from learning
-  to maintenance, happens inside a serializer's validation method, with database
-  writes, and the availability of tasks lives in a view filter. It works, but it is
-  hard to test and to reuse. In the rewrites, decisions are pure functions, and the
-  write happens in a transaction.
-- **A phase modeled as a cloned object.** Promoting a training to another phase
-  created another training, which fragmented the history. In the rewrites, the phase
-  is a state of the task, with an event on every transition.
-- **A table per game.** Each game had its own model. In the rewrites, one pair of
-  tables serves all of them, with JSON for what is specific to each.
-- **Recurrence as a list of days.** In the schedule that never went live, the
-  recurrence is an array of weekdays, expanded at read time in a single method of
-  about 240 lines, with three weekday numberings living side by side in the code. In
-  the new Skinner, recurrence is an RFC 5545 rule, expanded on demand, with a single
-  convention.
-- **Concentrated tests.** Automated tests are concentrated in users and patients:
-  142 integration test methods over the API. The other apps have no coverage, and
-  the schedule, which never reached production, has tests written but was never
-  validated in real use. The rewrites were born with unit and e2e tests per module.
-
-## Quality and operations
-
-There are 27 apps, 72 models, 240 migrations and about 31 thousand lines of Python,
-not counting migrations. The API documentation comes from the code, with OpenAPI
-through drf-spectacular, in Swagger and ReDoc, and each complex domain — heart-rate
-variability calculation and games API — has its own document in the
-repository. The code is formatted with Black. The API runs on AWS Lambda with Zappa,
-on Python 3.11, with PostgreSQL, S3 for files and SES for e-mail, and the repository
-also carries the configuration for Elastic Beanstalk.
-
-## What this project demonstrates
-
-From an engineering standpoint, the interest here is the trajectory: a Django
-monolith that accumulated three years of real domain — multi-tenant, games with
-telemetry and PDF reports — and whose lessons, rules outside the transport layer,
-immutable facts, virtual occurrences and tests, guided the rewrites.
-
-The project is complete.
+**Confidential project. The information presented has been deliberately limited
+to general technical aspects, without exposing code, user data or internal
+product details.**
